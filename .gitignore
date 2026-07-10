@@ -1,0 +1,28 @@
+# data & secrets — never commit financial data
+data/
+*.db
+*.db-*
+*.sqlite3
+.env
+*.pem
+*.key
+*.crt
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# node
+node_modules/
+dist/
+*.local
+
+# editors / os
+.DS_Store
+.idea/
+*.swp
