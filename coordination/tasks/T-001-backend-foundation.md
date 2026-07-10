@@ -1,6 +1,6 @@
 # T-001 — Backend foundation
 
-Owner: backend-dev agent · Branch: `ws/backend` · Status: review
+Owner: backend-dev agent · Branch: `ws/backend` · Status: done
 
 ## Scope
 
@@ -63,3 +63,6 @@ exactly:
   invalidates cached runs. Added `cryptography` dep for TLS autogen
   (task allowed choosing it over openssl subprocess). `gol-seed` never creates
   a password — first-run setup stays with the user.
+- 2026-07-10 (coordinator): promoted to done — QA (T-003) and security
+  (T-004) passed over the merged app; integrated main is green (125 server /
+  62 web tests) and end-to-end verified.

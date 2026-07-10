@@ -1,6 +1,6 @@
 # T-002 — Frontend foundation
 
-Owner: frontend-dev agent · Branch: `ws/frontend` · Status: review
+Owner: frontend-dev agent · Branch: `ws/frontend` · Status: done
 
 ## Scope
 
@@ -75,3 +75,6 @@ acceptance bar), against the contract in docs/API.md:
   coordinator. FastAPI now serves web/dist with SPA fallback (integration
   smoke-tested incl. traversal probes). Note for T-003: Goal.emoji nullability
   in web types (`string`) vs backend (nullable) — audit and align.
+- 2026-07-10 (coordinator): promoted to done — QA (T-003) and security
+  (T-004) passed over the merged app; integrated main is green (125 server /
+  62 web tests) and end-to-end verified.

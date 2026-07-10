@@ -1,6 +1,6 @@
 # T-003 — QA hardening
 
-Owner: qa agent · Branch: `ws/qa` · Status: review
+Owner: qa agent · Branch: `ws/qa` · Status: done
 
 ## Scope
 
@@ -74,3 +74,6 @@ Owner: qa agent · Branch: `ws/qa` · Status: review
   behaviors (not contract-doc changes) worth a glance at merge; consider whether
   profile PUT should reject a birth_year/life_expectancy combo up front
   (currently only guarded at simulate time).
+- 2026-07-10 (coordinator): promoted to done — QA (T-003) and security
+  (T-004) passed over the merged app; integrated main is green (125 server /
+  62 web tests) and end-to-end verified.
