@@ -41,10 +41,52 @@ describe('formatMoneyCompact', () => {
   })
 })
 
+describe('formatMoney negatives and zero (T-003)', () => {
+  it('formats large negatives with cents', () => {
+    expect(formatMoney(-1234567.89)).toBe('-$1,234,568')
+    expect(formatMoney(-1234.5, { cents: true })).toBe('-$1,234.50')
+  })
+  it('formats zero without a sign', () => {
+    expect(formatMoney(0)).toBe('$0')
+    expect(formatMoney(0, { cents: true })).toBe('$0.00')
+  })
+})
+
+describe('formatMoneyCompact boundaries (T-003)', () => {
+  it('crosses the K threshold at exactly 1000', () => {
+    expect(formatMoneyCompact(999)).toBe('$999')
+    expect(formatMoneyCompact(1000)).toBe('$1K')
+  })
+  it('switches from one-decimal to whole at 100 units', () => {
+    expect(formatMoneyCompact(99900)).toBe('$99.9K')
+    expect(formatMoneyCompact(100000)).toBe('$100K')
+  })
+  it('crosses M and B thresholds exactly', () => {
+    expect(formatMoneyCompact(1_000_000)).toBe('$1M')
+    expect(formatMoneyCompact(1_500_000_000)).toBe('$1.5B')
+  })
+  it('keeps the sign for negative magnitudes across thresholds', () => {
+    expect(formatMoneyCompact(-1_000_000)).toBe('-$1M')
+    expect(formatMoneyCompact(-999)).toBe('-$999')
+  })
+  it('formats zero and negative-zero as $0', () => {
+    expect(formatMoneyCompact(0)).toBe('$0')
+    expect(formatMoneyCompact(-0)).toBe('$0')
+  })
+  it('rounds a near-million just under 1e6 to $1000K (documented boundary, F-002)', () => {
+    // cosmetic: 999_999 renders as $1000K rather than $1M — locked as current
+    // behavior; see T-003 log F-002.
+    expect(formatMoneyCompact(999_999)).toBe('$1000K')
+  })
+})
+
 describe('formatMoneyDelta', () => {
   it('always signs', () => {
     expect(formatMoneyDelta(12300)).toBe('+$12,300')
     expect(formatMoneyDelta(-4100)).toBe('-$4,100')
+  })
+  it('signs zero as positive (T-003)', () => {
+    expect(formatMoneyDelta(0)).toBe('+$0')
   })
 })
 
