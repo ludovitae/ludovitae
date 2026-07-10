@@ -80,7 +80,7 @@ export function LoginPage() {
             {error}
           </p>
         ) : null}
-        <Button variant="primary" disabled={busy || password.length === 0} className="w-full">
+        <Button variant="primary" type="submit" disabled={busy || password.length === 0} className="w-full">
           {busy ? 'Unlocking…' : 'Unlock'}
         </Button>
       </form>
@@ -166,7 +166,7 @@ export function SetupPage() {
             {error}
           </p>
         ) : null}
-        <Button variant="primary" disabled={!ready || busy} className="w-full">
+        <Button variant="primary" type="submit" disabled={!ready || busy} className="w-full">
           {busy ? 'Setting up…' : 'Create & unlock'}
         </Button>
       </form>
