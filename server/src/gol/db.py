@@ -6,6 +6,8 @@ point GOL_DATA_DIR at a temp directory before the app starts.
 
 from __future__ import annotations
 
+import contextlib
+import os
 from collections.abc import Iterator
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -98,3 +100,9 @@ def run_migrations() -> None:
     cfg.set_main_option("script_location", "gol:migrations")
     cfg.set_main_option("sqlalchemy.url", config.db_url())
     command.upgrade(cfg, "head")
+
+    # Defense in depth: the financial DB holds only this user's data. The data
+    # dir is already 0700; tighten the file itself to 0600 in case the umask
+    # left it group/world-readable. Best-effort — never block startup on it.
+    with contextlib.suppress(OSError):
+        os.chmod(config.db_path(), 0o600)
