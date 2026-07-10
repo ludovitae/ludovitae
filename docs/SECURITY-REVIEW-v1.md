@@ -78,3 +78,15 @@ are fixed on `ws/security` with regression tests. `uv run pytest` = 66 passed,
 - **Accepted risk (documented):** S4, S5, S8.
 
 All high/critical findings are fixed. No architectural refactors were required.
+
+## Coordinator resolution (2026-07-10, post-merge)
+
+- **S3 — resolved.** Theme bootstrap externalized to `web/public/theme-init.js`
+  and loaded via `<script src>`; CSP unchanged (`script-src` stays `'self'`),
+  no first-paint flash.
+- **S6 — resolved (declared-length guard).** `BodyLimitMiddleware` returns 413
+  (`request_too_large`) for mutating requests declaring > 8 MB. A client lying
+  about Content-Length is dropped by h11 at the protocol layer, so the honest-
+  header spool path is closed without app-level buffering. Regression tests in
+  `server/tests/test_security.py` (suite now 68).
+- S9 remains deferred to v2; S4/S5/S8 remain accepted risks as documented.

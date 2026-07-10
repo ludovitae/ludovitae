@@ -5,25 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
     <title>Game of Life</title>
-    <script>
-      // Apply persisted theme/mode before first paint to avoid a flash.
-      ;(function () {
-        try {
-          var t = localStorage.getItem('gol.theme')
-          var m = localStorage.getItem('gol.mode')
-          var root = document.documentElement
-          if (t === 'fintech' || t === 'game') root.setAttribute('data-theme', t)
-          if (m === 'light' || m === 'dark') root.setAttribute('data-mode', m)
-          else
-            root.setAttribute(
-              'data-mode',
-              window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark',
-            )
-        } catch (e) {
-          /* first paint keeps defaults */
-        }
-      })()
-    </script>
+    <!-- External (not inline) so the CSP can keep script-src 'self'; see
+         SECURITY-REVIEW-v1 S3. Sync on purpose: runs before first paint. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

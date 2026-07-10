@@ -1,6 +1,6 @@
 # T-004 — Security review
 
-Owner: security agent · Branch: `ws/security` · Status: review
+Owner: security agent · Branch: `ws/security` · Status: done
 
 ## Scope
 
@@ -47,3 +47,9 @@ the LAN and malicious import files. Review and fix (small fixes directly on
   `pip-audit` + `npm audit --omit=dev` = 0 vulnerabilities. 4 commits on
   `ws/security`. Note: edits were staged in the shared main working tree, then
   moved to the `ws/security` worktree via stash — nothing committed to `main`.
+- 2026-07-10 (coordinator): merged to main; accepted after independent 66-test
+  run and reading the auth/importer diffs. Resolved the two flagged items:
+  S3 — theme bootstrap externalized to `web/public/theme-init.js` (CSP keeps
+  script-src 'self', no first-paint flash); S6 — `BodyLimitMiddleware` rejects
+  declared bodies > 8 MB with 413 (h11 drops lying clients at protocol layer);
+  regression tests added (68 total). Status → done.

@@ -260,3 +260,27 @@ def test_db_and_tls_dir_permissions(client):
     assert mode & 0o077 == 0, f"db file is group/world accessible: {oct(mode)}"
     data_mode = stat.S_IMODE(os.stat(config.data_dir()).st_mode)
     assert data_mode & 0o077 == 0, f"data dir too open: {oct(data_mode)}"
+
+
+# --- S6: declared-body-size guard ----------------------------------------------
+
+def test_oversized_declared_body_is_rejected_413(authed):
+    r = authed.post(
+        "/api/v1/import/commit",
+        content=b"",
+        headers={
+            "Content-Type": "multipart/form-data; boundary=x",
+            "Content-Length": str(9 * 1024 * 1024),
+        },
+    )
+    assert r.status_code == 413
+    assert r.json()["error"]["code"] == "request_too_large"
+
+
+def test_invalid_content_length_is_rejected_400(authed):
+    r = authed.post(
+        "/api/v1/goals",
+        content=b"{}",
+        headers={"Content-Type": "application/json", "Content-Length": "not-a-number"},
+    )
+    assert r.status_code == 400

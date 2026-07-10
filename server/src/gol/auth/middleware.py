@@ -37,6 +37,29 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# SECURITY-REVIEW-v1 S6: Starlette spools multipart bodies before route-level
+# size checks run. Declared-length guard; a client lying about Content-Length
+# gets dropped by h11 at the protocol layer, so this closes the honest-header
+# spool path without buffering anything ourselves.
+MAX_BODY_BYTES = 8 * 1024 * 1024
+
+
+class BodyLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method in MUTATING_METHODS:
+            declared = request.headers.get("content-length")
+            if declared is not None:
+                try:
+                    too_big = int(declared) > MAX_BODY_BYTES
+                except ValueError:
+                    return error_response(400, "bad_request", "invalid Content-Length")
+                if too_big:
+                    return error_response(
+                        413, "request_too_large", "request body exceeds 8 MB limit"
+                    )
+        return await call_next(request)
+
+
 class CsrfMiddleware(BaseHTTPMiddleware):
     """Require X-CSRF-Token matching the session's token on all mutating routes.
 

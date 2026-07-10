@@ -9,7 +9,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
-from gol.auth.middleware import CsrfMiddleware, SecurityHeadersMiddleware
+from gol.auth.middleware import (
+    BodyLimitMiddleware,
+    CsrfMiddleware,
+    SecurityHeadersMiddleware,
+)
 from gol.auth.router import router as auth_router
 from gol.auth.throttle import LoginThrottle
 from gol.db import run_migrations
@@ -31,6 +35,7 @@ def create_app() -> FastAPI:
 
     install_error_handlers(app)
     app.add_middleware(CsrfMiddleware)
+    app.add_middleware(BodyLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
     from gol.api import (
