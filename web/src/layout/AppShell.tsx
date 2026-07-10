@@ -1,6 +1,8 @@
+import { useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
+import { useSettingsQuery } from '@/api/queries'
 import { useTheme } from '@/theme/ThemeProvider'
 import {
   IconAccounts,
@@ -24,7 +26,16 @@ const NAV = [
 export function AppShell() {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const { theme } = useTheme()
+  const { theme, setTheme, setReduceMotion } = useTheme()
+
+  // Server settings are the source of truth for the theme flag + motion.
+  const settings = useSettingsQuery()
+  useEffect(() => {
+    if (settings.data) {
+      setTheme(settings.data.theme)
+      setReduceMotion(settings.data.reduce_motion)
+    }
+  }, [settings.data, setTheme, setReduceMotion])
 
   async function logout() {
     try {
