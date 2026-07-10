@@ -28,3 +28,7 @@ the LAN and malicious import files. Review and fix (small fixes directly on
 ## Log
 
 - 2026-07-10 (coordinator): task created.
+- 2026-07-10 (coordinator): from T-001 acceptance review — CSRF token check in
+  `server/src/gol/auth/middleware.py` compares with `!=`; use
+  `secrets.compare_digest`. Verify argon2 params and session-fixation behavior
+  (is a fresh session issued per login?) while in there.

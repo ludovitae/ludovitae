@@ -8,6 +8,10 @@ of dollars (float in JSON, Decimal/cents internally); ids are integers.
 Errors: `{"error": {"code": "string_code", "message": "human text"}}` with an
 appropriate HTTP status. Unauthenticated → 401. Missing CSRF on mutation → 403
 `csrf_required`. All list endpoints return plain JSON arrays (no envelope).
+POST creates return **201**. Every mutating route requires `X-CSRF-Token`,
+**including `/auth/logout`** (only `/auth/setup` and `/auth/login` are exempt —
+no session exists yet). `POST /accounts/{id}/balances` body: `{date, amount}`.
+CSV preview `sample_rows`: list of `{column: value}` objects.
 
 ## Auth
 
@@ -121,7 +125,12 @@ Duplicate detection: (account, date, amount, payee) hash.
 
 All `params` keys optional — a scenario is a diff against the baseline built
 from real profile/accounts/flows. `event.kind`:
-`one_time|recurring_expense|recurring_income`. Positive `amount` = money in.
+`one_time|recurring_expense|recurring_income`. Sign semantics (coordinator
+ruling 2026-07-10): `recurring_expense`/`recurring_income` take a **positive
+magnitude** in `amount_monthly` — direction is implied by the kind; recurring
+events do not auto-stop at retirement and are fixed-nominal. `one_time.amount`
+is **signed** (positive = money in). `monthly_savings_delta` is redirected
+spending (expenses −delta, invested contributions +delta, until retirement).
 A synthetic read-only baseline scenario (`id: 0`, `is_baseline: true`,
 name "Current trajectory") always exists.
 
