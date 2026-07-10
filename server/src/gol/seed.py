@@ -33,10 +33,9 @@ def seed(force: bool = False) -> None:
     run_migrations()
     db = session_factory()()
     try:
-        if db.execute(select(Account)).first() is not None:
-            if not force:
-                print("database already has accounts; use --force to seed anyway")
-                sys.exit(1)
+        if db.execute(select(Account)).first() is not None and not force:
+            print("database already has accounts; use --force to seed anyway")
+            sys.exit(1)
 
         today = dt.date.today()
         profile = get_or_create_profile(db)

@@ -59,7 +59,11 @@ def preview(data: bytes) -> dict:
         {columns[i]: (row[i] if i < len(row) else "") for i in range(len(columns))}
         for row in rows[1 : 1 + SAMPLE_ROWS]
     ]
-    return {"columns": columns, "sample_rows": sample, "suggested_mapping": suggest_mapping(columns)}
+    return {
+        "columns": columns,
+        "sample_rows": sample,
+        "suggested_mapping": suggest_mapping(columns),
+    }
 
 
 def parse_date(value: str) -> dt.date:

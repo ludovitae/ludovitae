@@ -5,9 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from gol.api.common import Db
 from gol.assembly import get_or_create_profile
 from gol.auth.deps import Authenticated
-from gol.api.common import Db
 from gol.models import Profile
 
 router = APIRouter(tags=["profile"])

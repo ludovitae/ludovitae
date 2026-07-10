@@ -5,11 +5,10 @@ Revises:
 Create Date: 2026-07-10 21:49:08.787056
 
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 import gol.db
-
 
 revision = '0001'
 down_revision = None
@@ -46,7 +45,8 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('auth_sessions', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_auth_sessions_token_hash'), ['token_hash'], unique=True)
+        batch_op.create_index(
+            batch_op.f('ix_auth_sessions_token_hash'), ['token_hash'], unique=True)
 
     op.create_table('goals',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -106,7 +106,8 @@ def upgrade() -> None:
     sa.UniqueConstraint('account_id', 'date', name='uq_balance_account_date')
     )
     with op.batch_alter_table('balance_snapshots', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_balance_snapshots_account_id'), ['account_id'], unique=False)
+        batch_op.create_index(
+            batch_op.f('ix_balance_snapshots_account_id'), ['account_id'], unique=False)
 
     op.create_table('flows',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -135,7 +136,8 @@ def upgrade() -> None:
     sa.UniqueConstraint('account_id', 'dedupe_hash', name='uq_txn_dedupe')
     )
     with op.batch_alter_table('transactions', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_transactions_account_id'), ['account_id'], unique=False)
+        batch_op.create_index(
+            batch_op.f('ix_transactions_account_id'), ['account_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_transactions_date'), ['date'], unique=False)
 
     # ### end Alembic commands ###

@@ -8,7 +8,8 @@ from __future__ import annotations
 import datetime as dt
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session as DbSession, selectinload
+from sqlalchemy.orm import Session as DbSession
+from sqlalchemy.orm import selectinload
 
 from gol.models import (
     CASH_TYPES,
