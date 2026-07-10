@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import selectinload
 
+from gol.errors import ApiError
 from gol.models import (
     CASH_TYPES,
     INVESTABLE_TYPES,
@@ -75,6 +76,21 @@ def build_plan_inputs(
     start_age = start_year - profile.birth_year
     retirement_age = int(params.get("retirement_age") or profile.retirement_age)
     life_expectancy = profile.life_expectancy
+
+    # Guard degenerate plan horizons before they reach the numpy engine, which
+    # would otherwise raise on a non-positive month count (surfacing as a 500).
+    # A future birth_year (negative age) or a life_expectancy below the current
+    # age are the reachable cases.
+    if start_age < 0:
+        raise ApiError(
+            422, "invalid_plan_horizon",
+            "birth_year is in the future; current age must be non-negative",
+        )
+    if life_expectancy < start_age:
+        raise ApiError(
+            422, "invalid_plan_horizon",
+            "life_expectancy is below current age; nothing to simulate",
+        )
 
     accounts = (
         db.execute(select(Account).options(selectinload(Account.balances)))
