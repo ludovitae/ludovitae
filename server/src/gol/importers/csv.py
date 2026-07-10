@@ -7,7 +7,7 @@ import datetime as dt
 import io
 import re
 
-from gol.importers.base import ParsedTransaction
+from gol.importers.base import ParsedTransaction, amount_ok
 
 SAMPLE_ROWS = 5
 
@@ -84,7 +84,10 @@ def parse_amount(value: str) -> float:
     if not re.fullmatch(r"-?\d+(\.\d+)?", cleaned):
         raise CsvError(f"unparseable amount: {value!r}")
     amount = float(cleaned)
-    return -amount if negative else amount
+    amount = -amount if negative else amount
+    if not amount_ok(amount):
+        raise CsvError(f"amount out of range: {value!r}")
+    return amount
 
 
 def parse_transactions(data: bytes, mapping: dict[str, str]) -> list[ParsedTransaction]:
