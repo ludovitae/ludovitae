@@ -1,0 +1,192 @@
+/* ---------------------------------------------------------------------------
+ * Design tokens — CSS variables per [data-theme] × [data-mode].
+ * Components never hard-code colors; they consume these via Tailwind
+ * utilities mapped in base.css. Chart palette is the dataviz-skill validated
+ * set (light steps on light surfaces, dark steps on dark surfaces).
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-1: 150ms;
+  --dur-2: 220ms;
+
+  /* Radii (fintech default; game overrides rounder) */
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --radius-l: 16px;
+
+  /* Type */
+  --font-sans:
+    'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ------------------------------- fintech · dark -------------------------- */
+:root[data-theme='fintech'][data-mode='dark'] {
+  color-scheme: dark;
+
+  --bg: #0e1014;
+  --surface: #15181e;
+  --surface-2: #1c2029;
+  --surface-3: #10131a;
+  --border: rgba(235, 240, 255, 0.09);
+  --border-strong: rgba(235, 240, 255, 0.16);
+
+  --ink: #f2f4f8;
+  --ink-2: #a4abb8;
+  --ink-3: #737b8a;
+
+  --accent: #3987e5;
+  --accent-hover: #4f97ee;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(57, 135, 229, 0.14);
+  --focus: #6fb1f5;
+
+  --positive: #40bd80;
+  --negative: #e5636a;
+  --warning: #e0a63c;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.45);
+
+  --chart-1: #3987e5;
+  --chart-2: #199e70;
+  --chart-3: #c98500;
+  --chart-4: #008300;
+  --chart-5: #9085e9;
+  --chart-6: #e66767;
+  --chart-7: #d55181;
+  --chart-8: #d95926;
+  --chart-grid: rgba(235, 240, 255, 0.07);
+  --chart-axis: rgba(235, 240, 255, 0.16);
+  --chart-ref: #8b93a3;
+}
+
+/* ------------------------------- fintech · light ------------------------- */
+:root[data-theme='fintech'][data-mode='light'] {
+  color-scheme: light;
+
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #f2f3f6;
+  --surface-3: #f7f8fa;
+  --border: rgba(18, 24, 38, 0.09);
+  --border-strong: rgba(18, 24, 38, 0.16);
+
+  --ink: #191d26;
+  --ink-2: #4e5665;
+  --ink-3: #838b9b;
+
+  --accent: #2a78d6;
+  --accent-hover: #2168c0;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(42, 120, 214, 0.1);
+  --focus: #2a78d6;
+
+  --positive: #0f7b41;
+  --negative: #c53a42;
+  --warning: #96690f;
+
+  --shadow-1: 0 1px 2px rgba(18, 24, 38, 0.06);
+  --shadow-2: 0 10px 30px rgba(18, 24, 38, 0.1);
+
+  --chart-1: #2a78d6;
+  --chart-2: #1baf7a;
+  --chart-3: #eda100;
+  --chart-4: #008300;
+  --chart-5: #4a3aa7;
+  --chart-6: #e34948;
+  --chart-7: #e87ba4;
+  --chart-8: #eb6834;
+  --chart-grid: rgba(18, 24, 38, 0.06);
+  --chart-axis: rgba(18, 24, 38, 0.16);
+  --chart-ref: #7c8496;
+}
+
+/* -------------------------------- game · dark ---------------------------- */
+:root[data-theme='game'] {
+  --radius-s: 12px;
+  --radius-m: 16px;
+  --radius-l: 20px;
+}
+
+:root[data-theme='game'][data-mode='dark'] {
+  color-scheme: dark;
+
+  --bg: #171210;
+  --surface: #201916;
+  --surface-2: #2a211c;
+  --surface-3: #1a1411;
+  --border: rgba(255, 233, 210, 0.1);
+  --border-strong: rgba(255, 233, 210, 0.18);
+
+  --ink: #f8f1e7;
+  --ink-2: #bfb09d;
+  --ink-3: #8d8172;
+
+  --accent: #e8933c;
+  --accent-hover: #f0a355;
+  --accent-fg: #221407;
+  --accent-soft: rgba(232, 147, 60, 0.16);
+  --focus: #f0b269;
+
+  --positive: #4cbd7c;
+  --negative: #e56a5c;
+  --warning: #e0a63c;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.5);
+
+  --chart-1: #3987e5;
+  --chart-2: #199e70;
+  --chart-3: #c98500;
+  --chart-4: #008300;
+  --chart-5: #9085e9;
+  --chart-6: #e66767;
+  --chart-7: #d55181;
+  --chart-8: #d95926;
+  --chart-grid: rgba(255, 233, 210, 0.07);
+  --chart-axis: rgba(255, 233, 210, 0.18);
+  --chart-ref: #a4937c;
+}
+
+/* -------------------------------- game · light --------------------------- */
+:root[data-theme='game'][data-mode='light'] {
+  color-scheme: light;
+
+  --bg: #f8f2e8;
+  --surface: #fffdf8;
+  --surface-2: #f5eee2;
+  --surface-3: #faf6ee;
+  --border: rgba(66, 45, 18, 0.11);
+  --border-strong: rgba(66, 45, 18, 0.2);
+
+  --ink: #2c2417;
+  --ink-2: #6b5c45;
+  --ink-3: #97896f;
+
+  --accent: #b95d10;
+  --accent-hover: #a35009;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(185, 93, 16, 0.12);
+  --focus: #b95d10;
+
+  --positive: #157a43;
+  --negative: #bf4232;
+  --warning: #8f6410;
+
+  --shadow-1: 0 1px 2px rgba(66, 45, 18, 0.08);
+  --shadow-2: 0 10px 30px rgba(66, 45, 18, 0.12);
+
+  --chart-1: #2a78d6;
+  --chart-2: #1baf7a;
+  --chart-3: #eda100;
+  --chart-4: #008300;
+  --chart-5: #4a3aa7;
+  --chart-6: #e34948;
+  --chart-7: #e87ba4;
+  --chart-8: #eb6834;
+  --chart-grid: rgba(66, 45, 18, 0.07);
+  --chart-axis: rgba(66, 45, 18, 0.18);
+  --chart-ref: #8d7c60;
+}
