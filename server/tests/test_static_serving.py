@@ -66,6 +66,21 @@ def test_api_routes_still_win_over_spa(spa):
     assert resp.json()["setup_required"] is True
 
 
+def test_unknown_api_path_404s_json_not_index(spa):
+    # D-003: an unknown API GET must return a JSON 404 envelope, never the SPA
+    # index HTML (a client would otherwise parse HTML as an API response).
+    resp = spa.get("/api/v1/does-not-exist")
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "not_found"
+    assert INDEX_MARKER not in resp.text
+
+
+def test_api_prefixed_client_path_still_404s(spa):
+    resp = spa.get("/api/something/else")
+    assert resp.status_code == 404
+    assert INDEX_MARKER not in resp.text
+
+
 @pytest.mark.parametrize(
     "path",
     [

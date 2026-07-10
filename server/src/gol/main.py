@@ -13,7 +13,7 @@ from gol.auth.middleware import CsrfMiddleware, SecurityHeadersMiddleware
 from gol.auth.router import router as auth_router
 from gol.auth.throttle import LoginThrottle
 from gol.db import run_migrations
-from gol.errors import install_error_handlers
+from gol.errors import ApiError, install_error_handlers
 
 # repo_root/web/dist, overridable for tests/packaging
 _DEFAULT_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
@@ -71,6 +71,10 @@ def _mount_spa(app: FastAPI) -> None:
 
     @app.get("/{path:path}", include_in_schema=False)
     async def spa(path: str) -> FileResponse:
+        # Unknown API paths must 404 as JSON, not fall through to index.html
+        # (a client would otherwise try to parse HTML as an API response).
+        if path == "api" or path.startswith("api/"):
+            raise ApiError(404, "not_found", "no such API route")
         candidate = (dist / path).resolve() if path else index
         if candidate.is_file() and candidate.is_relative_to(dist):
             return FileResponse(candidate)
