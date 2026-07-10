@@ -96,6 +96,9 @@ def login(body: PasswordBody, request: Request, response: Response, db: Db):
         throttle.record_failure(ip)
         raise ApiError(401, "invalid_credentials", "invalid password")
     throttle.record_success(ip)
+    # Session rotation / fixation defense: never reuse a token presented at
+    # login. Drop any session the incoming cookie names, then mint a fresh one.
+    destroy_session(db, request.cookies.get(SESSION_COOKIE))
     token, csrf = create_session(db)
     _set_auth_cookies(request, response, token, csrf)
     return {"csrf_token": csrf}
