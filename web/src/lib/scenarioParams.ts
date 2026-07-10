@@ -21,10 +21,12 @@ export function cleanParams(params: ScenarioParams): ScenarioParams {
 
 function cleanEvent(e: ScenarioEvent): ScenarioEvent {
   const base = { name: e.name, kind: e.kind }
+  // one_time.amount is signed (positive = money in); recurring amounts are
+  // positive magnitudes with direction implied by kind (ruling 2026-07-10).
   if (e.kind === 'one_time') return { ...base, amount: e.amount ?? 0, age: e.age ?? 0 }
   return {
     ...base,
-    amount_monthly: e.amount_monthly ?? 0,
+    amount_monthly: Math.abs(e.amount_monthly ?? 0),
     start_age: e.start_age ?? 0,
     end_age: e.end_age ?? null,
   }

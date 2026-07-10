@@ -122,7 +122,15 @@ async function importPreview(form: FormData): Promise<ImportPreview> {
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
   if (lines.length < 2) throw new ApiError(400, 'empty_file', 'No data rows found')
   const columns = splitCsvLine(lines[0]!)
-  const sample_rows = lines.slice(1, 9).map(splitCsvLine)
+  // contract ruling 2026-07-10: rows are {column: value} objects
+  const sample_rows = lines.slice(1, 9).map((l) => {
+    const cells = splitCsvLine(l)
+    const row: Record<string, string> = {}
+    columns.forEach((c, i) => {
+      row[c] = cells[i] ?? ''
+    })
+    return row
+  })
   const suggested: Partial<CsvMapping> = {}
   for (const col of columns) {
     const c = col.toLowerCase()

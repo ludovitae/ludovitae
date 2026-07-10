@@ -115,7 +115,8 @@ export interface CsvMapping {
 
 export interface ImportPreviewCsv {
   columns: string[]
-  sample_rows: string[][]
+  /** contract ruling 2026-07-10: rows are {column: value} objects */
+  sample_rows: Record<string, string>[]
   suggested_mapping: Partial<CsvMapping>
 }
 
@@ -137,11 +138,12 @@ export type EventKind = 'one_time' | 'recurring_expense' | 'recurring_income'
 export interface ScenarioEvent {
   name: string
   kind: EventKind
-  /** recurring_*: monthly amount (positive = money in) */
+  /** recurring_*: POSITIVE magnitude — direction implied by kind
+   * (contract ruling 2026-07-10). Does not auto-stop at retirement. */
   amount_monthly?: number
   start_age?: number
   end_age?: number | null
-  /** one_time */
+  /** one_time: SIGNED — positive = money in */
   amount?: number
   age?: number
 }
