@@ -82,7 +82,16 @@ function dashboard(): DashboardData {
     liabilities,
     history: db.netWorthHistory(),
     by_type: byType as DashboardData['by_type'],
-    goals_summary: db.goals,
+    goals_summary: db.goals.map((g) => ({
+      id: g.id,
+      name: g.name,
+      emoji: g.emoji,
+      target_amount: g.target_amount,
+      funded_amount: g.funded_amount,
+      target_date: g.target_date,
+      priority: g.priority,
+      pct_funded: g.target_amount ? Math.round((1000 * g.funded_amount) / g.target_amount) / 10 : 0,
+    })),
     monthly_surplus: Math.round((income - outgo) * 100) / 100,
   }
 }

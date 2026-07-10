@@ -69,3 +69,9 @@ acceptance bar), against the contract in docs/API.md:
   headless browser exists on this host (chromium shell missing libatk, no
   root), so visual QA in a real browser is left to T-003; `VITE_MOCK=1 npm
   run dev` verified serving. Status → review.
+- 2026-07-10 (coordinator): merged to main. Acceptance: independent
+  build/lint/43-test run; read api client + FanChart. goals_summary ruled a
+  Goal subset + pct_funded (API.md updated); web types/mock aligned by
+  coordinator. FastAPI now serves web/dist with SPA fallback (integration
+  smoke-tested incl. traversal probes). Note for T-003: Goal.emoji nullability
+  in web types (`string`) vs backend (nullable) — audit and align.

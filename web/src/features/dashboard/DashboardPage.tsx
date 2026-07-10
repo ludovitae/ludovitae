@@ -178,7 +178,7 @@ function GoalRow({
   target,
 }: {
   name: string
-  emoji: string
+  emoji: string | null
   funded: number
   target: number
 }) {

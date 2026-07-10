@@ -164,5 +164,10 @@ Arrays are annual (one value per age, year-end). Synchronous; target < 1.5s at
 "history": [{"date", "net_worth"}], "by_type": {"brokerage": 250000, ...},
 "goals_summary": [...], "monthly_surplus": 2100.0}`
 
+`goals_summary` (coordinator ruling 2026-07-10): a Goal **subset** —
+`{id, name, emoji, target_amount, funded_amount, target_date, priority,
+pct_funded}` — where `pct_funded` is server-computed (0 when target is 0);
+`notes` is not included.
+
 `GET /settings` / `PATCH /settings` → `{"theme": "fintech", "reduce_motion": false}`
 (`theme`: `fintech|game` — the A/B feature flag.)

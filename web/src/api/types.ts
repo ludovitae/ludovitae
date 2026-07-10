@@ -202,13 +202,24 @@ export interface CompareResult {
   results: (SimResult & { scenario_id: number; name: string })[]
 }
 
+export interface GoalSummary {
+  id: number
+  name: string
+  emoji: string | null
+  target_amount: number
+  funded_amount: number
+  target_date: string | null
+  priority: number
+  pct_funded: number
+}
+
 export interface DashboardData {
   net_worth: number
   assets: number
   liabilities: number
   history: { date: string; net_worth: number }[]
   by_type: Partial<Record<AccountType, number>>
-  goals_summary: Goal[]
+  goals_summary: GoalSummary[]
   monthly_surplus: number
 }
 
