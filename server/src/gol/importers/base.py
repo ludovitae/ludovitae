@@ -5,7 +5,19 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import hashlib
+import math
 from dataclasses import dataclass
+
+# Sanity bound for a single imported money value (dollars). Anything larger —
+# or non-finite (inf/nan) — is rejected before it reaches the Decimal->int64
+# cents column, which would otherwise raise and surface as a 500. Comfortably
+# below the int64 cents ceiling (~9.2e16 dollars).
+MAX_AMOUNT = 1e13
+
+
+def amount_ok(value: float) -> bool:
+    """True if `value` is a finite, in-range money amount safe to persist."""
+    return math.isfinite(value) and abs(value) <= MAX_AMOUNT
 
 
 @dataclass(frozen=True)

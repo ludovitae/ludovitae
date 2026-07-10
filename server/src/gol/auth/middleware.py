@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
@@ -16,11 +18,13 @@ CSRF_EXEMPT_PATHS = {"/api/v1/auth/setup", "/api/v1/auth/login"}
 SECURITY_HEADERS = {
     "Content-Security-Policy": (
         "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        "connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; "
+        "form-action 'self'; frame-ancestors 'none'"
     ),
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
     "X-Frame-Options": "DENY",
+    "Cross-Origin-Opener-Policy": "same-origin",
     "Cache-Control": "no-store",
 }
 
@@ -56,7 +60,8 @@ class CsrfMiddleware(BaseHTTPMiddleware):
                     db.close()
                 if session is not None:
                     header = request.headers.get(CSRF_HEADER)
-                    if not header or header != session.csrf_token:
+                    # Constant-time compare: never leak token bytes via timing.
+                    if not header or not secrets.compare_digest(header, session.csrf_token):
                         return error_response(
                             403, "csrf_required", "missing or invalid X-CSRF-Token header"
                         )

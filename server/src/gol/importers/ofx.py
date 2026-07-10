@@ -11,7 +11,7 @@ import datetime as dt
 import re
 from dataclasses import dataclass, field
 
-from gol.importers.base import ParsedTransaction
+from gol.importers.base import ParsedTransaction, amount_ok
 
 
 class OfxError(ValueError):
@@ -55,9 +55,12 @@ def _parse_amount(value: str | None) -> float | None:
     if value is None:
         return None
     try:
-        return float(value.replace(",", "."))
+        amount = float(value.replace(",", "."))
     except ValueError:
         return None
+    # Drop non-finite / absurd magnitudes (inf, nan, overflow) so they can never
+    # reach the int64 cents column and crash the request with a 500.
+    return amount if amount_ok(amount) else None
 
 
 def _strip_headers(text: str) -> str:
