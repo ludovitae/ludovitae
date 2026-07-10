@@ -187,7 +187,7 @@ function GoalRow({
     <div>
       <div className="flex items-baseline justify-between gap-2">
         <p className="truncate text-[13px] font-medium text-ink">
-          <span className="mr-1.5">{emoji}</span>
+          <span className="mr-1.5">{emoji || '🎯'}</span>
           {name}
         </p>
         <p className="num shrink-0 text-xs text-ink-2">

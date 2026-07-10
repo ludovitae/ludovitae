@@ -86,7 +86,8 @@ export type FlowPatch = Partial<FlowCreate>
 export interface Goal {
   id: number
   name: string
-  emoji: string
+  /** nullable: the backend model stores emoji as optional (Goal.emoji nullable) */
+  emoji: string | null
   target_amount: number
   target_date: string | null
   priority: number

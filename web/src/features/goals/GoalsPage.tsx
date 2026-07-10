@@ -224,7 +224,7 @@ function GoalModal({ goal, onClose }: { goal: Goal | null; onClose: () => void }
             {(id) => (
               <TextInput
                 id={id}
-                value={form.emoji}
+                value={form.emoji ?? ''}
                 onChange={(e) => setForm({ ...form, emoji: e.target.value })}
                 className="text-center"
               />
