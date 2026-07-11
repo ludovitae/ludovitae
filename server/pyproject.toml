@@ -1,6 +1,6 @@
 [project]
 name = "ludovitae"
-version = "1.2.0"
+version = "1.2.1"
 description = "Game of Life — personal financial life simulator (backend)"
 requires-python = ">=3.12"
 dependencies = [

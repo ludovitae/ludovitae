@@ -18,12 +18,17 @@ updated in the same commit that opens a version's tasks.
   model-honesty (85% SS cap, assumptions block); standalone bracket tax
   module. See docs/releases/v1.2.0.md.
 
+- **v1.2.1** — durability (pre-migration backups, daily snapshots, export),
+  model-honesty UI (assumptions strip, ~5% probabilities, what-moved notes),
+  Ludovitae identity (MIT, GitHub org, CI, PyPI trusted publishing). See
+  docs/releases/v1.2.1.md.
+
 ## In flight
 
-- **T-010 (v1.2b durability)** and **T-011b (assumptions strip UI)** — next
-  to fire; **T-009 (v1.2a first real baseline)** awaits owner exports in
-  data/first-mile/. Rename to Ludovitae + GitHub org push awaits the owner's
-  org token.
+- **Issue #4 (T-009 first real baseline)** — awaits owner exports in
+  data/first-mile/. **Issue #5 (bracket-tax phase 2)** — next engine work.
+  Package rename `gol`→`ludovitae` awaits the owner's issue. Board:
+  github.com/ludovitae/ludovitae/issues.
 
 ## Next (sequencing under owner review after the 2026-07-11 PM nemesis review)
 
