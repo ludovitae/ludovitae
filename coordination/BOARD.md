@@ -11,8 +11,13 @@
 | T-007 | v1.2 backend: transfers/credit-card model, rules+heuristic categorization, freshness, analytics, AI budget | backend-dev agent | ws/spending-be | done — merged (219 tests, tombstones + rulings applied) |
 | T-008 | v1.2 frontend: spending hub, review queues, freshness badges, AI admin panel | frontend-dev agent | ws/spending-fe | review — accepted (128 tests); mock-reconciliation pass before merge |
 | T-009 | v1.2a first real baseline: flow form, importer presets/sign detection vs owner's real exports, browser QA | fe+be agents | ws/first-mile | hold — needs T-008 merge + owner exports in data/first-mile/ |
+<<<<<<< HEAD
 | T-010 | v1.2b durability: pre-migration backup, scheduled snapshots, export endpoint | backend-dev agent | ws/durability | review — 291 tests; export shape in task log for API.md codification |
 | T-011 | Model honesty: 85% SS cap + assumptions in API (011a); assumptions strip + 5% rounding in UI (011b) | be + fe agents | ws/honesty-be/-fe | 011a done — merged (engine v2); 011b hold — after T-008 |
+=======
+| T-010 | v1.2b durability: pre-migration backup, scheduled snapshots, export endpoint | backend-dev agent | ws/durability | PR #1 open — awaiting owner merge |
+| T-011 | Model honesty: 85% SS cap + assumptions in API (011a); assumptions strip + 5% rounding in UI (011b) | be + fe agents | ws/honesty-be/-fe | 011a done — merged; 011b PR #3 open — awaiting owner merge |
+>>>>>>> 00b7074 (docs(board): T-010 -> PR #1, T-011b -> PR #3 (owner merge gate))
 | T-012 | Bracket-aware tax phase 1: standalone gol/tax module + design doc | backend-dev agent | ws/tax-brackets | done — merged; phase 2 integration next |
 
 ## Backlog (unowned, actionable only — versioned plans live in docs/ROADMAP.md)
