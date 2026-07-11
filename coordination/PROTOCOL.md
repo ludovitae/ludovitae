@@ -36,6 +36,22 @@ Until we migrate to Forgejo, this directory *is* the project management tool.
 Agents mark `review` when done; the coordinator (with QA/security input)
 promotes to `done`.
 
+## Releases (adopted 2026-07-11, owner ask)
+
+A version "ships" when the coordinator completes integrated verification on
+main (both suites green + end-to-end walk). At that moment, in one commit +
+tag:
+
+1. Write `docs/releases/vX.Y.Z.md` — features in owner language, quality
+   numbers (test counts, findings), migration notes, known gaps, golden
+   movements if engine behavior changed.
+2. `git tag -a vX.Y.Z -m "<one-line summary>"` on the verified commit.
+3. Update ROADMAP.md (Shipped section) in the same commit.
+
+Semver-ish: minor = feature wave (v1.2.0), patch = fixes to a shipped
+version (v1.0.1). Tags survive the Forgejo migration and become releases
+there.
+
 ## Definition of done (all tasks)
 
 - Acceptance criteria in the task file met.
