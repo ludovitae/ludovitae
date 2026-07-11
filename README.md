@@ -1,13 +1,18 @@
-# Game of Life
+# Ludovitae
 
-A personal financial life simulator you run at home. Feed it your accounts, goals,
-dreams, and possessions; play out alternate lives: *What if I saved $500 more a month?
-What if I retire at 55? What if I take up golf?* Monte Carlo simulation gives honest
-probability bands instead of a single rosy line.
+*ludus* (game) + *vitae* (lives) — a personal financial life simulator you run
+at home. Feed it your accounts, goals, dreams, and possessions; play out
+alternate lives: *What if I saved $500 more a month? What if I retire at 55?
+What if I take up golf?* Monte Carlo simulation gives honest probability bands
+instead of a single rosy line.
+
+MIT licensed (see [LICENSE](LICENSE)).
 
 ## Status
 
-v1 in active development. See [docs/ROADMAP.md](docs/ROADMAP.md).
+v1.2.0 shipped — see [docs/ROADMAP.md](docs/ROADMAP.md) and
+[docs/releases/](docs/releases/). Started life as "game of life"; the Python
+package is still `gol` pending the post-v1.2 rename.
 
 ## Stack
 
