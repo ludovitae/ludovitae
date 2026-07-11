@@ -247,6 +247,8 @@ function AddAccountModal({ onClose }: { onClose: () => void }) {
     member_id: null,
     include_in_net_worth: true,
     notes: '',
+    staleness_days: null,
+    track_freshness: true,
   })
   const investable = INVESTABLE_TYPES.includes(form.type)
   const physical = form.type === 'property' || form.type === 'vehicle' || form.type === 'other_asset'

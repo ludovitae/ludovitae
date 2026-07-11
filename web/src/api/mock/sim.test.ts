@@ -23,26 +23,35 @@ const household: HouseholdMember[] = [
   },
 ]
 
+/** v1.2 freshness fields — irrelevant to the sim, required by the type. */
+const noFreshness = {
+  last_import_at: null,
+  newest_transaction_date: null,
+  staleness_days: null,
+  track_freshness: false,
+  freshness: 'off',
+} as const
+
 const accounts: Account[] = [
   {
     id: 1, name: 'Brokerage', type: 'brokerage', institution: '', balance: 400000,
     growth_rate_pct: null, asset_class: 'stocks', member_id: null,
-    include_in_net_worth: true, notes: '', created_at: '2026-01-01',
+    include_in_net_worth: true, notes: '', created_at: '2026-01-01', ...noFreshness,
   },
   {
     id: 2, name: 'Checking', type: 'checking', institution: '', balance: 20000,
     growth_rate_pct: null, asset_class: 'cash', member_id: null,
-    include_in_net_worth: true, notes: '', created_at: '2026-01-01',
+    include_in_net_worth: true, notes: '', created_at: '2026-01-01', ...noFreshness,
   },
   {
     id: 3, name: '401k', type: 'retirement', institution: '', balance: 250000,
     growth_rate_pct: null, asset_class: 'mixed', member_id: 1,
-    include_in_net_worth: true, notes: '', created_at: '2026-01-01',
+    include_in_net_worth: true, notes: '', created_at: '2026-01-01', ...noFreshness,
   },
   {
     id: 4, name: '403b', type: 'retirement', institution: '', balance: 90000,
     growth_rate_pct: null, asset_class: 'mixed', member_id: 2,
-    include_in_net_worth: true, notes: '', created_at: '2026-01-01',
+    include_in_net_worth: true, notes: '', created_at: '2026-01-01', ...noFreshness,
   },
 ]
 

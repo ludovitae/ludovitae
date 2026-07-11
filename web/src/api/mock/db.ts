@@ -3,7 +3,9 @@
 
 import type {
   Account,
+  AccountType,
   BalanceSnapshot,
+  CategoryRule,
   Flow,
   Goal,
   HouseholdMember,
@@ -42,11 +44,31 @@ export const household: HouseholdMember[] = [
 
 const today = todayISO()
 
+/** ISO date `n` days before today (local). */
+function daysAgoISO(n: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${mm}-${dd}`
+}
+
+/** v1.2 contract default: freshness is tracked for cash/card/investment types. */
+export const TRACK_FRESHNESS_DEFAULT: readonly AccountType[] = [
+  'checking',
+  'savings',
+  'brokerage',
+  'retirement',
+  'hsa',
+  'credit_card',
+]
+
 export const accounts: Account[] = [
-  acc(1, 'Everyday Checking', 'checking', 'First Tech CU', 12400, null, 'cash', null),
-  acc(2, 'High-Yield Savings', 'savings', 'Ally', 42000, null, 'cash', null),
-  acc(3, 'Vanguard Brokerage', 'brokerage', 'Vanguard', 178000, null, 'stocks', null),
-  acc(4, '401(k)', 'retirement', 'Fidelity', 295000, null, 'mixed', 1),
+  // freshness spread on purpose: fresh / aging / stale / never / off all demo.
+  imp(acc(1, 'Everyday Checking', 'checking', 'First Tech CU', 12400, null, 'cash', null), 3),
+  imp(acc(2, 'High-Yield Savings', 'savings', 'Ally', 42000, null, 'cash', null), 27),
+  imp(acc(3, 'Vanguard Brokerage', 'brokerage', 'Vanguard', 178000, null, 'stocks', null), 61),
+  acc(4, '401(k)', 'retirement', 'Fidelity', 295000, null, 'mixed', 1), // never imported
   acc(5, 'Roth IRA', 'retirement', 'Vanguard', 88000, null, 'stocks', 1),
   acc(6, 'HSA', 'hsa', 'Fidelity', 24500, null, 'stocks', 2),
   acc(7, 'House', 'property', '—', 480000, 3.0, null, null, 'Zestimate, sanity-checked'),
@@ -54,6 +76,7 @@ export const accounts: Account[] = [
   acc(9, 'Mortgage', 'mortgage', 'Rocket', 315000, null, null, null, '2.9% 30yr, 2021'),
   acc(10, 'Car Loan', 'loan', 'First Tech CU', 6500, null, null, null),
   acc(11, '403(b)', 'retirement', 'TIAA', 96000, null, 'mixed', 2),
+  imp(acc(12, 'Sapphire Card', 'credit_card', 'Chase', 1850, null, null, null), 2),
 ]
 
 function acc(
@@ -79,7 +102,19 @@ function acc(
     include_in_net_worth: true,
     notes,
     created_at: today,
+    last_import_at: null,
+    newest_transaction_date: null,
+    staleness_days: null,
+    track_freshness: TRACK_FRESHNESS_DEFAULT.includes(type),
+    freshness: 'never', // storage default; served value is computed per request
   }
+}
+
+/** Mark an account as last imported `daysAgo` days ago. */
+function imp(a: Account, daysAgo: number): Account {
+  a.last_import_at = `${daysAgoISO(daysAgo)}T09:15:00`
+  a.newest_transaction_date = daysAgoISO(daysAgo + 1)
+  return a
 }
 
 export const flows: Flow[] = [
@@ -218,68 +253,201 @@ export function netWorthHistory(): { date: string; net_worth: number }[] {
 }
 
 /* --------------------------- transactions ------------------------------- */
+/* v1.2 demo ledger. Checking (1) carries salary, mortgage, groceries,
+ * utilities, gas. The Sapphire Card (12) carries dining/shopping plus the
+ * fixed-day subscriptions the radar should find — including one price hike
+ * (Netflix) and long-running flat charges for the "possibly forgotten" group.
+ * Monthly checking→card payments are auto-paired transfers (shared
+ * transfer_pair_id) and must vanish from every analytics view. */
 
-const PAYEES: [string, string, number, number][] = [
-  // payee, category, typical amount, monthly frequency
-  ['New Seasons Market', 'groceries', -142, 5],
-  ['Fred Meyer', 'groceries', -87, 3],
-  ['PGE', 'utilities', -128, 1],
-  ['NW Natural', 'utilities', -64, 1],
-  ['Comcast', 'utilities', -89, 1],
-  ['Chevron', 'auto', -52, 3],
-  ['Ristretto Roasters', 'dining', -14, 6],
-  ['Nostrana', 'dining', -118, 1],
-  ['REI', 'shopping', -95, 0.5],
-  ['Powell’s Books', 'shopping', -38, 1],
-  ['Netflix', 'subscriptions', -15.49, 1],
-  ['Spotify', 'subscriptions', -11.99, 1],
+// payee, category, typical amount, monthly frequency, account
+const VARIABLE_PAYEES: [string, string, number, number, number][] = [
+  ['New Seasons Market', 'groceries', -142, 5, 1],
+  ['Fred Meyer', 'groceries', -87, 3, 1],
+  ['PGE', 'utilities', -128, 1, 1],
+  ['NW Natural', 'utilities', -64, 1, 1],
+  ['Comcast', 'utilities', -89, 1, 1],
+  ['Chevron', 'auto', -52, 3, 1],
+  ['Ristretto Roasters', 'dining', -14, 6, 12],
+  ['Nostrana', 'dining', -118, 1, 12],
+  ['REI', 'shopping', -95, 0.5, 12],
+  ['Powell’s Books', 'shopping', -38, 1, 12],
 ]
 
-// 24 months of history so the 3/6/12/24-month observed windows all have data.
+// payee, category, amount(s), fixed day of month, months-ago range [from, to]
+interface SubSpec {
+  payee: string
+  category: string
+  day: number
+  /** amount as a function of months-ago, so price hikes are expressible */
+  amount: (monthsAgo: number) => number
+  fromMonthsAgo: number
+  toMonthsAgo: number
+}
+
+const CARD_SUBS: SubSpec[] = [
+  // The price hike: 15.49 through month 6, 17.99 since (+16.1%).
+  { payee: 'Netflix', category: 'subscriptions', day: 28, amount: (m) => (m >= 6 ? 15.49 : 17.99), fromMonthsAgo: 23, toMonthsAgo: 0 },
+  // Started 8 months ago — active but too young for "possibly forgotten".
+  { payee: 'Spotify', category: 'subscriptions', day: 6, amount: () => 11.99, fromMonthsAgo: 7, toMonthsAgo: 0 },
+  // The forgotten ones: flat price, running well past 12 months.
+  { payee: 'Apex Gym', category: 'health', day: 3, amount: () => 34, fromMonthsAgo: 23, toMonthsAgo: 0 },
+  { payee: 'CloudVault Storage', category: 'subscriptions', day: 12, amount: () => 2.99, fromMonthsAgo: 19, toMonthsAgo: 0 },
+  // Lapsed: cancelled ~5 months ago, shows in the inactive group.
+  { payee: 'HBO Max', category: 'subscriptions', day: 15, amount: () => 15.99, fromMonthsAgo: 23, toMonthsAgo: 5 },
+  // Card interest is REAL spending per the credit-card ruling.
+  { payee: 'Purchase Interest Charge', category: 'interest-fees', day: 27, amount: () => 23.5, fromMonthsAgo: 4, toMonthsAgo: 0 },
+]
+
+// Uncategorized imports for the review queue (source: none, category "").
+const UNCATEGORIZED: [string, number, number, number][] = [
+  // payee, amount, days ago, account
+  ['SQ *BLUE STAR DONUTS', -12.5, 4, 12],
+  ['TST* PINE STATE BISCUITS', -28.75, 6, 12],
+  ['AMZN Mktp US*2K47F0', -63.18, 8, 12],
+  ['PAYPAL *STEAMGAMES', -29.99, 11, 12],
+  ['IKEA PORTLAND', -214.32, 13, 12],
+  ['SQ *BLUE STAR DONUTS', -9.25, 17, 12],
+  ['VENMO PAYMENT 8842', -45, 19, 1],
+  ['USPS PO 4038560204', -11.6, 22, 1],
+  ['TST* PINE STATE BISCUITS', -31.4, 26, 12],
+  ['AMZN Mktp US*9Q31Z8', -18.99, 33, 12],
+  ['ST JOHNS ACE HARDWARE', -37.86, 41, 1],
+  ['SQ *BLUE STAR DONUTS', -14, 47, 12],
+]
+
+function monthISO(monthsAgo: number, day: number): string {
+  const base = new Date()
+  base.setDate(1)
+  base.setMonth(base.getMonth() - monthsAgo)
+  const y = base.getFullYear()
+  const mo = base.getMonth() + 1
+  return `${y}-${String(mo).padStart(2, '0')}-${String(Math.min(day, 28)).padStart(2, '0')}`
+}
+
+// 24 months of history so the 3/6/12/24-month windows all have data.
 export const transactions: Transaction[] = (() => {
   const rng = mulberry32(20260710)
   const out: Transaction[] = []
   let id = 1
+  const push = (
+    account_id: number,
+    date: string,
+    amount: number,
+    payee: string,
+    category: string,
+    source: Transaction['category_source'] = 'rule',
+    transfer_pair_id: number | null = null,
+  ) =>
+    out.push({
+      id: id++,
+      account_id,
+      date,
+      amount: Math.round(amount * 100) / 100,
+      payee,
+      category,
+      transfer_pair_id,
+      category_source: category === '' ? 'none' : source,
+    })
+
   for (let m = 23; m >= 0; m--) {
-    const base = new Date()
-    base.setDate(1)
-    base.setMonth(base.getMonth() - m)
-    const y = base.getFullYear()
-    const mo = base.getMonth() + 1
-    const iso = (day: number) =>
-      `${y}-${String(mo).padStart(2, '0')}-${String(Math.min(day, 28)).padStart(2, '0')}`
+    const iso = (day: number) => monthISO(m, day)
     // paychecks on the 1st and 15th
-    out.push({ id: id++, account_id: 1, date: iso(1), amount: 4900, payee: 'ACME Corp Payroll', category: 'salary' })
-    out.push({ id: id++, account_id: 1, date: iso(15), amount: 4900, payee: 'ACME Corp Payroll', category: 'salary' })
-    out.push({ id: id++, account_id: 1, date: iso(3), amount: 3100, payee: 'Evergreen Health Payroll', category: 'salary' })
-    out.push({ id: id++, account_id: 1, date: iso(5), amount: -2350, payee: 'Rocket Mortgage', category: 'housing' })
-    for (const [payee, category, amt, freq] of PAYEES) {
-      const n = Math.floor(freq) + (rng() < freq % 1 ? 1 : 0)
+    push(1, iso(1), 4900, 'ACME Corp Payroll', 'salary')
+    push(1, iso(15), 4900, 'ACME Corp Payroll', 'salary')
+    push(1, iso(3), 3100, 'Evergreen Health Payroll', 'salary')
+    push(1, iso(5), -2350, 'Rocket Mortgage', 'housing')
+
+    // variable spending; dining runs hot in the last 3 months (hotspot demo)
+    for (const [payee, category, amt, freq, account] of VARIABLE_PAYEES) {
+      const hot = category === 'dining' && m < 3
+      const effFreq = hot ? freq + 1 : freq
+      const n = Math.floor(effFreq) + (rng() < effFreq % 1 ? 1 : 0)
       for (let i = 0; i < n; i++) {
         const day = 1 + Math.floor(rng() * 27)
-        const jitter = 1 + (rng() - 0.5) * 0.3
-        out.push({
-          id: id++,
-          account_id: 1,
-          date: iso(day),
-          amount: Math.round(amt * jitter * 100) / 100,
-          payee,
-          category,
-        })
+        const jitter = (1 + (rng() - 0.5) * 0.3) * (hot ? 1.35 : 1)
+        push(account, iso(day), amt * jitter, payee, category, 'heuristic')
       }
     }
+
+    // fixed-day subscriptions on the card
+    for (const s of CARD_SUBS) {
+      if (m > s.fromMonthsAgo || m < s.toMonthsAgo) continue
+      push(12, iso(s.day), -s.amount(m), s.payee, s.category)
+    }
+
+    // checking→card payment, auto-paired on import (exact amount, 1 day apart)
+    const payment = Math.round((1250 + rng() * 450) * 100) / 100
+    const pairId = 9000 + m
+    push(1, iso(20), -payment, 'Payment to Sapphire Card', '', 'none', pairId)
+    push(12, iso(21), payment, 'Payment Thank You - Web', '', 'none', pairId)
   }
+
+  // Amazon Prime — annual cadence needs 3 occurrences to be detected.
+  for (const m of [25, 13, 1]) push(12, monthISO(m, 20), -139, 'Amazon Prime', 'subscriptions')
+
+  // uncategorized review-queue rows
+  for (const [payee, amount, ago, account] of UNCATEGORIZED)
+    push(account, daysAgoISO(ago), amount, payee, '')
+
+  // near-miss transfer candidates (NOT paired):
+  // (a) exact amount but 6 days apart — outside the ±4 auto-pair window
+  push(1, daysAgoISO(14), -500, 'Online Transfer to Ally Savings', '')
+  push(2, daysAgoISO(8), 500, 'Transfer from First Tech CU', '')
+  // (b) same day but transposed cents on one leg
+  push(1, daysAgoISO(5), -1389.42, 'Sapphire Card Payment', '')
+  push(12, daysAgoISO(5), 1389.24, 'Payment Thank You - Web', '')
+
   return out.sort((a, b) => (a.date < b.date ? 1 : -1))
 })()
+
+/** Near-miss transfer candidates for the review queue: transaction id pairs
+ * with a match score, resolved to live rows by the handler (pairing or
+ * categorizing a leg removes the candidate). */
+export const transferCandidates: { txn_ids: [number, number]; score: number }[] = (() => {
+  const find = (payee: string, amount: number) =>
+    transactions.find((t) => t.payee === payee && t.amount === amount && t.transfer_pair_id === null)
+  const pairs: [string, number, string, number, number][] = [
+    ['Online Transfer to Ally Savings', -500, 'Transfer from First Tech CU', 500, 0.58],
+    ['Sapphire Card Payment', -1389.42, 'Payment Thank You - Web', 1389.24, 0.86],
+  ]
+  const out: { txn_ids: [number, number]; score: number }[] = []
+  for (const [pa, aa, pb, ab, score] of pairs) {
+    const a = find(pa, aa)
+    const b = find(pb, ab)
+    if (a && b) out.push({ txn_ids: [a.id, b.id], score })
+  }
+  return out
+})()
+
+/* ----------------------- category rules (v1.2) --------------------------- */
+
+export const rules: CategoryRule[] = [
+  { id: 1, pattern: 'new seasons', match: 'contains', field: 'payee', category: 'groceries', priority: 1 },
+  { id: 2, pattern: 'netflix', match: 'contains', field: 'payee', category: 'subscriptions', priority: 2 },
+  { id: 3, pattern: 'pge', match: 'contains', field: 'payee', category: 'utilities', priority: 3 },
+]
+
+/* ----------------------- AI budget state (v1.2) -------------------------- */
+/* The key itself is write-only storage; enabled stays false (stub). Usage is
+ * all zeros — the ledger ships before any AI call exists. */
+
+export const aiState = {
+  api_key: null as string | null,
+  enabled: false,
+  monthly_budget_usd: 5,
+}
 
 /* ----------------------------- id counters ------------------------------ */
 
 export const nextId = {
-  account: 12,
+  account: 13,
   flow: 9,
   goal: 5,
   member: 4,
   scenario: 3,
   spendingCategory: 11,
   transaction: transactions.length + 1,
+  rule: 4,
+  transferPair: 9500,
 }

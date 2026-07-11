@@ -1,4 +1,4 @@
-/** Types mirroring docs/API.md (binding contract, v1.1). Do not drift. */
+/** Types mirroring docs/API.md (binding contract, v1.2). Do not drift. */
 
 export interface SessionInfo {
   authenticated: boolean
@@ -62,6 +62,9 @@ export const INVESTABLE_TYPES: readonly AccountType[] = ['brokerage', 'retiremen
 
 export type AssetClass = 'stocks' | 'bonds' | 'cash' | 'mixed'
 
+/** v1.2 import freshness — server-computed from last_import_at + threshold. */
+export type Freshness = 'fresh' | 'aging' | 'stale' | 'never' | 'off'
+
 export interface Account {
   id: number
   name: string
@@ -75,9 +78,20 @@ export interface Account {
   include_in_net_worth: boolean
   notes: string
   created_at: string
+  /* v1.2 import freshness */
+  last_import_at: string | null
+  newest_transaction_date: string | null
+  /** per-account staleness threshold override in days; null → default 35 */
+  staleness_days: number | null
+  /** default false for property/vehicle/other, true for cash/card/investment */
+  track_freshness: boolean
+  freshness: Freshness
 }
 
-export type AccountCreate = Omit<Account, 'id' | 'created_at'>
+export type AccountCreate = Omit<
+  Account,
+  'id' | 'created_at' | 'last_import_at' | 'newest_transaction_date' | 'freshness'
+>
 export type AccountPatch = Partial<AccountCreate>
 
 export interface BalanceSnapshot {
@@ -162,6 +176,9 @@ export interface ObservedSpending {
   by_category: ObservedCategory[]
 }
 
+/** v1.2: how a transaction got its category. */
+export type CategorySource = 'manual' | 'rule' | 'heuristic' | 'ai' | 'none'
+
 export interface Transaction {
   id: number
   account_id: number
@@ -169,6 +186,132 @@ export interface Transaction {
   amount: number
   payee: string
   category: string
+  /** v1.2: both legs of a paired transfer share one id; paired transactions
+   * are excluded from all spending analytics */
+  transfer_pair_id: number | null
+  category_source: CategorySource
+}
+
+/* --------------- transfers & categorization (v1.2) ----------------------- */
+
+export interface TransferCandidate {
+  /** 0–1 match confidence */
+  score: number
+  txns: [Transaction, Transaction]
+}
+
+export type RuleMatch = 'contains' | 'exact'
+
+export interface CategoryRule {
+  id: number
+  pattern: string
+  match: RuleMatch
+  field: 'payee'
+  category: string
+  /** applied ascending, first match wins */
+  priority: number
+}
+
+export type CategoryRuleCreate = Omit<CategoryRule, 'id'>
+export type CategoryRulePatch = Partial<CategoryRuleCreate>
+
+export interface ApplyRulesResult {
+  recategorized: number
+}
+
+export interface CategorySuggestion {
+  payee: string
+  category: string
+  confidence: number
+}
+
+export interface SuggestResult {
+  suggestions: CategorySuggestion[]
+  /** heuristics only in v1.2 — the AI implementation lands behind the same shape */
+  source: 'heuristic' | 'ai'
+}
+
+/* --------------------- spending analytics (v1.2) ------------------------- */
+
+export interface SpendingSummary {
+  /** "2026-01" … */
+  months: string[]
+  categories: {
+    category: string
+    /** one total per month, aligned with `months` */
+    totals: number[]
+    total: number
+  }[]
+  grand_total: number
+}
+
+export type RecurringCadence = 'monthly' | 'weekly' | 'annual'
+
+export interface RecurringCharge {
+  payee: string
+  category: string
+  cadence: RecurringCadence
+  typical_amount: number
+  last_amount: number
+  /** flagged, not disqualifying; 0 when the price is steady */
+  price_change_pct: number
+  last_date: string
+  first_seen: string
+  occurrences: number
+  /** seen within 1.5× cadence */
+  active: boolean
+  monthly_equivalent: number
+}
+
+export interface SpendingHotspots {
+  category_spikes: {
+    category: string
+    recent_monthly_avg: number
+    baseline_monthly_avg: number
+    delta_pct: number
+  }[]
+  top_merchants: { payee: string; monthly_avg: number; txn_count: number }[]
+  price_increases: RecurringCharge[]
+  /** active, low-variance, running ≥ 12 months */
+  possibly_forgotten: RecurringCharge[]
+}
+
+export interface SpendingForecast {
+  months: string[]
+  /** projected recurring total per month, aligned with `months` */
+  recurring: number[]
+  variable_by_category: { category: string; totals: number[] }[]
+  total: number[]
+}
+
+/* ----------------------- AI budget & admin (v1.2) ------------------------ */
+
+export interface AiSettings {
+  has_api_key: boolean
+  /** null until a key is stored; the key itself is write-only */
+  api_key_last4: string | null
+  enabled: boolean
+  monthly_budget_usd: number
+  spend_this_month_usd: number
+  tokens_this_month: { input: number; output: number }
+}
+
+/** PUT /settings/ai — key is write-only; api_key: null deletes it. */
+export interface AiSettingsUpdate {
+  api_key?: string | null
+  enabled?: boolean
+  monthly_budget_usd?: number
+}
+
+export interface AiUsageMonth {
+  month: string
+  input_tokens: number
+  output_tokens: number
+  est_cost_usd: number
+  by_purpose: Record<
+    string,
+    { input_tokens: number; output_tokens: number; est_cost_usd: number }
+  >
 }
 
 export interface CsvMapping {
@@ -305,6 +448,13 @@ export interface GoalSummary {
   pct_funded: number
 }
 
+export interface StaleAccount {
+  id: number
+  name: string
+  freshness: Freshness
+  days_since_import: number | null
+}
+
 export interface DashboardData {
   net_worth: number
   assets: number
@@ -313,6 +463,8 @@ export interface DashboardData {
   by_type: Partial<Record<AccountType, number>>
   goals_summary: GoalSummary[]
   monthly_surplus: number
+  /** v1.2: aging + stale only */
+  stale_accounts: StaleAccount[]
 }
 
 export interface Settings {
