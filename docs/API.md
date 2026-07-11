@@ -286,13 +286,53 @@ Every future AI call must write an `ai_usage` ledger row and hard-stop with
 `[{"id", "account_id", "date", "amount", "payee", "category"}]`
 
 `POST /import/preview` — multipart: `file`, `kind` (`csv|ofx`), `account_id`.
-Returns `{columns: [...], sample_rows: [...], suggested_mapping: {...}}` for CSV;
+Returns `{columns: [...], sample_rows: [...], suggested_mapping: {...},
+matched_preset: ..., sign_hint: ...}` for CSV;
 for OFX returns `{accounts_found: [...], transaction_count, balance}`.
 
 `POST /import/commit` — multipart `file` + JSON fields `kind`, `account_id`,
 `mapping` (CSV: `{date: "col", amount: "col", payee: "col", category?: "col"}`),
 `update_balance: bool` → `{imported: n, skipped_duplicates: n}`.
 Duplicate detection: (account, date, amount, payee) hash.
+
+### Import presets & sign conventions (v1.2.2, T-009 — coordinator-ruled)
+
+Mapping presets remember a saved column mapping per institution, keyed by the
+CSV **header fingerprint**: `sha256` of the lowercased, sorted, comma-joined
+CSV header list.
+
+| Method | Path | Body → Response |
+|---|---|---|
+| GET | `/import/presets` | → `[{id, name, header_fingerprint, mapping, flip_signs, created_at}]` |
+| DELETE | `/import/presets/{id}` | → 204 |
+
+CSV `mapping` accepts an optional `{debit: "col", credit: "col"}` **in place
+of** `amount` for split debit/credit exports (`debit` = outflow → negative,
+`credit` = inflow → positive); `preview.suggested_mapping` detects such
+headers and suggests `debit`/`credit` instead of `amount`.
+
+`POST /import/preview` (CSV) response gains:
+
+- `matched_preset: {id, name, mapping, flip_signs} | null` — the stored
+  preset whose `header_fingerprint` matches the uploaded file, if any.
+- `sign_hint: {looks_flipped: bool, reason: str} | null` — sign-convention
+  heuristic: when the target account is a liability type
+  (`credit_card|loan|mortgage`) and
+  more than 80% of the parsed amounts are positive, `looks_flipped` is true
+  with a plain-language reason ("47 of 50 rows look like charges …"). Null
+  when the heuristic has nothing to say.
+
+`POST /import/commit` (CSV) gains optional multipart fields:
+
+- `flip_signs: bool` (default false) — negate every parsed amount before
+  storing (for charges-positive card exports).
+- `save_preset: str` (absent = don't save) — save the commit's mapping +
+  flip_signs under this name, **upserting by header fingerprint** (one preset
+  per institution header shape; a re-save updates name/mapping/flip_signs).
+
+Rows that cannot be parsed as transactions but form a contiguous *trailing*
+block (bank summary/total footers) are skipped by CSV parsing; unparseable
+rows anywhere else are still a hard `parse_error`.
 
 ## Scenarios
 
