@@ -1,0 +1,39 @@
+name: Release
+
+# Publishes the server package to PyPI via Trusted Publishing (OIDC).
+# PyPI pending-publisher registration: project "ludovitae", owner "ludovitae",
+# repo "ludovitae", workflow "release.yml", environment "pypi".
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist and wheel
+        working-directory: server
+        run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dists
+          path: server/dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # OIDC for PyPI Trusted Publishing — no token anywhere
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dists
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
