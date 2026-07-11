@@ -11,16 +11,18 @@ import {
   usePatchAccount,
 } from '@/api/queries'
 import type { Account, AccountCreate, AccountType, AssetClass } from '@/api/types'
-import { ACCOUNT_TYPES, INVESTABLE_TYPES, LIABILITY_TYPES } from '@/api/types'
+import { ACCOUNT_TYPES, FRESHNESS_TRACKED_TYPES, INVESTABLE_TYPES, LIABILITY_TYPES } from '@/api/types'
 import { AreaChart } from '@/charts/AreaChart'
 import { Button } from '@/components/Button'
 import { Card } from '@/components/Card'
 import { EmptyState } from '@/components/EmptyState'
-import { Field, Select, TextInput } from '@/components/Field'
+import { Field, Select, TextInput, Toggle } from '@/components/Field'
+import { FreshnessBadgeButton } from '@/components/FreshnessBadge'
 import { Drawer, Modal } from '@/components/Overlay'
 import { Skeleton } from '@/components/Skeleton'
 import { IconHistory, IconPlus, IconTrash, TYPE_ICONS } from '@/components/icons'
 import { formatDate, formatMoney, todayISO } from '@/lib/format'
+import { daysSince } from '@/lib/freshness'
 import { PageHeader } from '@/layout/AppShell'
 
 const TYPE_LABELS: Record<AccountType, string> = {
@@ -160,6 +162,7 @@ function AccountRow({
           {account.growth_rate_pct !== null ? ` · ${account.growth_rate_pct > 0 ? '+' : ''}${account.growth_rate_pct}%/yr` : ''}
         </p>
       </div>
+      {account.freshness !== 'off' ? <StalenessControl account={account} /> : null}
       <InlineBalance account={account} negative={negative} />
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
         <Button variant="ghost" size="sm" onClick={onHistory} aria-label={`Balance history for ${account.name}`}>
@@ -182,6 +185,69 @@ function AccountRow({
         )}
       </div>
     </li>
+  )
+}
+
+/** Freshness badge + click-to-open staleness-threshold popover. The badge
+ * tooltip carries days-since-import; the popover edits the per-account
+ * override (blank = the 35-day default). */
+function StalenessControl({ account }: { account: Account }) {
+  const patch = usePatchAccount()
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  const days = daysSince(account.last_import_at, todayISO())
+
+  function openPopover() {
+    setDraft(account.staleness_days === null ? '' : String(account.staleness_days))
+    setOpen(true)
+  }
+
+  function save(e: FormEvent) {
+    e.preventDefault()
+    const n = draft.trim() === '' ? null : Number(draft)
+    if (n !== null && (!Number.isFinite(n) || n < 1)) return
+    patch.mutate([account.id, { staleness_days: n === null ? null : Math.round(n) }])
+    setOpen(false)
+  }
+
+  return (
+    <div className="relative shrink-0">
+      <FreshnessBadgeButton
+        freshness={account.freshness}
+        daysSinceImport={days}
+        aria-expanded={open}
+        onClick={() => (open ? setOpen(false) : openPopover())}
+      />
+      {open ? (
+        <form
+          onSubmit={save}
+          className="absolute right-0 top-7 z-20 w-56 rounded-(--radius-s) border border-edge bg-surface p-3 shadow-2"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setOpen(false)
+          }}
+        >
+          <label htmlFor={`stale-${account.id}`} className="mb-1.5 block text-xs font-medium text-ink-2">
+            Warn when older than (days)
+          </label>
+          <div className="flex gap-2">
+            <TextInput
+              id={`stale-${account.id}`}
+              autoFocus
+              inputMode="numeric"
+              placeholder="35"
+              className="num h-8 text-[13px]"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+            />
+            <Button variant="primary" size="sm" type="submit" disabled={patch.isPending}>
+              Save
+            </Button>
+          </div>
+          <p className="mt-1.5 text-[11px] text-ink-3">Blank uses the 35-day default.</p>
+        </form>
+      ) : null}
+    </div>
   )
 }
 
@@ -247,6 +313,8 @@ function AddAccountModal({ onClose }: { onClose: () => void }) {
     member_id: null,
     include_in_net_worth: true,
     notes: '',
+    staleness_days: null,
+    track_freshness: true,
   })
   const investable = INVESTABLE_TYPES.includes(form.type)
   const physical = form.type === 'property' || form.type === 'vehicle' || form.type === 'other_asset'
@@ -296,6 +364,8 @@ function AddAccountModal({ onClose }: { onClose: () => void }) {
                         ? 'cash'
                         : 'stocks'
                       : null,
+                    // contract default: tracked for cash/card/investment types
+                    track_freshness: FRESHNESS_TRACKED_TYPES.includes(type),
                   })
                 }}
               >
@@ -382,6 +452,39 @@ function AddAccountModal({ onClose }: { onClose: () => void }) {
             </Select>
           )}
         </Field>
+        <div className="flex items-center justify-between gap-3 rounded-(--radius-s) bg-surface-2 px-3 py-2.5">
+          <div>
+            <p className="text-[13px] font-medium text-ink">Track import freshness</p>
+            <p className="text-[11px] text-ink-3">Badge the account when its data goes stale</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {form.track_freshness ? (
+              <label className="flex items-center gap-1.5 text-[11px] text-ink-3">
+                warn after
+                <TextInput
+                  inputMode="numeric"
+                  aria-label="Staleness threshold in days"
+                  placeholder="35"
+                  className="num h-7 w-14 px-2 text-[12px]"
+                  value={form.staleness_days === null ? '' : String(form.staleness_days)}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      staleness_days:
+                        e.target.value.trim() === '' ? null : Math.max(1, Math.round(Number(e.target.value) || 0)),
+                    })
+                  }
+                />
+                days
+              </label>
+            ) : null}
+            <Toggle
+              checked={form.track_freshness}
+              onChange={(v) => setForm({ ...form, track_freshness: v })}
+              label="Track import freshness"
+            />
+          </div>
+        </div>
         <div className="mt-1 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Cancel

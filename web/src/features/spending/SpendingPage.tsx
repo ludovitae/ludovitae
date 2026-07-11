@@ -1,8 +1,12 @@
-/** Spending page (v1.1) — planned categories (essential vs discretionary,
- * inline amount edit), monthly savings target, observed-vs-planned panel from
- * /spending/observed with per-row "use observed", and the recurring-flows
- * list (owner picker per row) with the double-count warning the contract
- * requires when expense-kind flows coexist with categories. */
+/** Spending hub (v1.2). Tabs, not sections (T-008 decision): "edit the plan"
+ * and "read the analytics" are different tasks, and stacked sections would
+ * make a five-screen page. Tab state lives in ?tab= so every view is
+ * linkable; Plan (the v1.1 page) stays the default.
+ *
+ * Plan tab: planned categories (essential vs discretionary, inline edit),
+ * savings target, observed-vs-planned with "use observed", recurring-flows
+ * owner table, double-count warning. Analytics tabs: Summary (category ×
+ * month heatmap), Recurring (subscription radar), Hotspots, Forecast. */
 
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -25,7 +29,11 @@ import { IconPlus, IconTrash, IconWarning } from '@/components/icons'
 import { formatMoney } from '@/lib/format'
 import { mergeObservedPlanned } from '@/lib/spendingMerge'
 import { PageHeader } from '@/layout/AppShell'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
+import { SummaryTab } from './SummaryTab'
+import { RecurringTab } from './RecurringTab'
+import { HotspotsTab } from './HotspotsTab'
+import { ForecastTab } from './ForecastTab'
 
 const KIND_LABELS: Record<SpendingKind, string> = {
   essential: 'Essential',
@@ -34,23 +42,83 @@ const KIND_LABELS: Record<SpendingKind, string> = {
 
 const WINDOWS = [3, 6, 12, 24] as const
 
+const TABS = [
+  { id: 'plan', label: 'Plan' },
+  { id: 'summary', label: 'Summary' },
+  { id: 'recurring', label: 'Recurring' },
+  { id: 'hotspots', label: 'Hotspots' },
+  { id: 'forecast', label: 'Forecast' },
+] as const
+
+type TabId = (typeof TABS)[number]['id']
+
+const TAB_HINTS: Record<TabId, string> = {
+  plan: 'What life costs — planned categories, and what the transactions actually say',
+  summary: 'Where the money went, by category and month',
+  recurring: 'The subscription radar — every regular charge, and the ones you may have forgotten',
+  hotspots: 'What changed — category spikes, price increases, top merchants',
+  forecast: 'The next 12 months if nothing changes',
+}
+
 export function SpendingPage() {
+  const [params, setParams] = useSearchParams()
+  const raw = params.get('tab')
+  const tab: TabId = (TABS.some((t) => t.id === raw) ? raw : 'plan') as TabId
+
+  function selectTab(id: TabId) {
+    setParams(id === 'plan' ? {} : { tab: id }, { replace: true })
+  }
+
+  return (
+    <>
+      <PageHeader title="Spending" hint={TAB_HINTS[tab]} />
+
+      <div
+        role="tablist"
+        aria-label="Spending views"
+        className="mb-4 inline-flex rounded-(--radius-s) border border-edge bg-surface-3 p-0.5"
+      >
+        {TABS.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => selectTab(id)}
+            onKeyDown={(e) => {
+              const i = TABS.findIndex((t) => t.id === tab)
+              if (e.key === 'ArrowRight') selectTab(TABS[(i + 1) % TABS.length]!.id)
+              if (e.key === 'ArrowLeft') selectTab(TABS[(i + TABS.length - 1) % TABS.length]!.id)
+            }}
+            className={`rounded-[calc(var(--radius-s)-2px)] px-3.5 py-1.5 text-[13px] font-medium transition-colors duration-150 ${
+              tab === id ? 'bg-surface text-ink shadow-1' : 'text-ink-3 hover:text-ink'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div role="tabpanel" aria-label={TABS.find((t) => t.id === tab)!.label}>
+        {tab === 'plan' ? <PlanTab /> : null}
+        {tab === 'summary' ? <SummaryTab /> : null}
+        {tab === 'recurring' ? <RecurringTab /> : null}
+        {tab === 'hotspots' ? <HotspotsTab /> : null}
+        {tab === 'forecast' ? <ForecastTab /> : null}
+      </div>
+    </>
+  )
+}
+
+/* ------------------------------- plan tab -------------------------------- */
+
+function PlanTab() {
   const { data: spending, isPending } = useSpending()
   const { data: flows } = useFlows()
   const [adding, setAdding] = useState(false)
 
   return (
     <>
-      <PageHeader
-        title="Spending"
-        hint="What life costs — planned categories, and what the transactions actually say"
-        action={
-          <Button variant="primary" onClick={() => setAdding(true)}>
-            <IconPlus width={16} height={16} /> Add category
-          </Button>
-        }
-      />
-
       {isPending || !spending ? (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <Skeleton className="h-96" />
@@ -107,6 +175,13 @@ function PlanCard({
       <CardHeader
         title="Planned spending"
         hint="Monthly categories — they stop when the last earner retires"
+        action={
+          spending.categories.length > 0 ? (
+            <Button variant="primary" size="sm" onClick={onAdd}>
+              <IconPlus width={15} height={15} /> Add category
+            </Button>
+          ) : undefined
+        }
       />
       {spending.categories.length === 0 ? (
         <EmptyState

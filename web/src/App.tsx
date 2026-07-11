@@ -20,6 +20,7 @@ import { SpendingPage } from '@/features/spending/SpendingPage'
 import { ScenariosPage } from '@/features/scenarios/ScenariosPage'
 import { GoalsPage } from '@/features/goals/GoalsPage'
 import { ImportPage } from '@/features/import/ImportPage'
+import { ReviewPage } from '@/features/review/ReviewPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 
 const queryClient = new QueryClient({
@@ -82,6 +83,7 @@ const router = createBrowserRouter([
           { path: '/scenarios', element: <ScenariosPage /> },
           { path: '/goals', element: <GoalsPage /> },
           { path: '/import', element: <ImportPage /> },
+          { path: '/review', element: <ReviewPage /> },
           { path: '/settings', element: <SettingsPage /> },
           { path: '*', element: <Navigate to="/" replace /> },
         ],

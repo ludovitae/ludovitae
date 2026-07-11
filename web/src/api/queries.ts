@@ -11,7 +11,10 @@ import { api } from './client'
 import type {
   AccountCreate,
   AccountPatch,
+  AiSettingsUpdate,
   BalanceSnapshot,
+  CategoryRuleCreate,
+  CategoryRulePatch,
   FlowCreate,
   FlowPatch,
   GoalCreate,
@@ -43,6 +46,16 @@ export const qk = {
   simulate: (paramsKey: string) => ['simulate', paramsKey] as const,
   compare: (ids: number[]) => ['compare', ids.join(',')] as const,
   settings: ['settings'] as const,
+  /* v1.2 */
+  spendingSummary: (from: string, to: string) => ['spending', 'summary', from, to] as const,
+  spendingRecurring: ['spending', 'recurring'] as const,
+  spendingHotspots: (months: number) => ['spending', 'hotspots', months] as const,
+  spendingForecast: (months: number) => ['spending', 'forecast', months] as const,
+  transferCandidates: ['transfers', 'candidates'] as const,
+  uncategorized: ['transactions', 'uncategorized'] as const,
+  rules: ['rules'] as const,
+  aiSettings: ['ai', 'settings'] as const,
+  aiUsage: (months: number) => ['ai', 'usage', months] as const,
 }
 
 export function useSession() {
@@ -108,6 +121,61 @@ export function useTransactions(accountId?: number, limit = 200) {
 
 export function useSettingsQuery() {
   return useQuery({ queryKey: qk.settings, queryFn: api.settings.get, staleTime: 300_000 })
+}
+
+/* ------------------------- v1.2 analytics queries ------------------------ */
+/* Windowed analytics hold the previous slice while a new one loads so charts
+ * never flash empty (same rule as observed spending / simulations). */
+
+export function useSpendingSummary(from: string, to: string) {
+  return useQuery({
+    queryKey: qk.spendingSummary(from, to),
+    queryFn: () => api.spending.summary({ from, to }),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useSpendingRecurring() {
+  return useQuery({ queryKey: qk.spendingRecurring, queryFn: api.spending.recurring })
+}
+
+export function useSpendingHotspots(months: number) {
+  return useQuery({
+    queryKey: qk.spendingHotspots(months),
+    queryFn: () => api.spending.hotspots(months),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useSpendingForecast(months: number) {
+  return useQuery({
+    queryKey: qk.spendingForecast(months),
+    queryFn: () => api.spending.forecast(months),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useTransferCandidates() {
+  return useQuery({ queryKey: qk.transferCandidates, queryFn: api.transfers.candidates })
+}
+
+export function useUncategorized() {
+  return useQuery({
+    queryKey: qk.uncategorized,
+    queryFn: () => api.transactions.list({ uncategorized: 1, limit: 500 }),
+  })
+}
+
+export function useRules() {
+  return useQuery({ queryKey: qk.rules, queryFn: api.rules.list })
+}
+
+export function useAiSettings() {
+  return useQuery({ queryKey: qk.aiSettings, queryFn: api.ai.settings })
+}
+
+export function useAiUsage(months: number) {
+  return useQuery({ queryKey: qk.aiUsage(months), queryFn: () => api.ai.usage(months) })
 }
 
 /** Live simulation for the studio. Caller debounces `params`; previous data
@@ -267,4 +335,60 @@ export function useDeleteScenario() {
 
 export function usePatchSettings() {
   return useInvalidating((s: Partial<Settings>) => api.settings.patch(s), [qk.settings])
+}
+
+/* --------------------------- v1.2 mutations ------------------------------ */
+/* Pairing and categorization change what the analytics see — invalidate the
+ * whole ['spending'] prefix (profile + observed + summary/recurring/etc.). */
+
+export function usePairTransfers() {
+  return useInvalidating(
+    (ids: [number, number]) => api.transfers.pair(ids),
+    [qk.transferCandidates, ['transactions'], ['spending']],
+  )
+}
+
+export function useUnpairTransfer() {
+  return useInvalidating(
+    (pairId: number) => api.transfers.unpair(pairId),
+    [qk.transferCandidates, ['transactions'], ['spending']],
+  )
+}
+
+/** Persistent server-side dismissal (tombstone) — ruling 2026-07-11. */
+export function useDismissCandidate() {
+  return useInvalidating(
+    (ids: [number, number]) => api.transfers.dismissCandidate(ids),
+    [qk.transferCandidates],
+  )
+}
+
+export function useCategorizeTransactions() {
+  return useInvalidating(
+    (ids: number[], category: string) => api.transactions.categorize(ids, category),
+    [['transactions'], ['spending']],
+  )
+}
+
+export function useCreateRule() {
+  return useInvalidating((r: CategoryRuleCreate) => api.rules.create(r), [qk.rules])
+}
+
+export function usePatchRule() {
+  return useInvalidating(
+    (id: number, patch: CategoryRulePatch) => api.rules.patch(id, patch),
+    [qk.rules],
+  )
+}
+
+export function useDeleteRule() {
+  return useInvalidating((id: number) => api.rules.remove(id), [qk.rules])
+}
+
+export function useApplyRules() {
+  return useInvalidating(() => api.rules.apply(), [qk.rules, ['transactions'], ['spending']])
+}
+
+export function useUpdateAiSettings() {
+  return useInvalidating((s: AiSettingsUpdate) => api.ai.update(s), [['ai']])
 }

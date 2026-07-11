@@ -7,7 +7,14 @@ import type {
   Account,
   AccountCreate,
   AccountPatch,
+  AiSettings,
+  AiSettingsUpdate,
+  AiUsageMonth,
+  ApplyRulesResult,
   BalanceSnapshot,
+  CategoryRule,
+  CategoryRuleCreate,
+  CategoryRulePatch,
   CompareResult,
   CsvMapping,
   DashboardData,
@@ -31,9 +38,15 @@ import type {
   Settings,
   SimResult,
   SimulateRequest,
+  RecurringCharge,
+  SpendingForecast,
+  SpendingHotspots,
   SpendingProfile,
   SpendingProfileInput,
+  SpendingSummary,
+  SuggestResult,
   Transaction,
+  TransferCandidate,
 } from './types'
 
 export const MOCK = import.meta.env.VITE_MOCK === '1'
@@ -150,6 +163,45 @@ export const api = {
     update: (s: SpendingProfileInput) => request<SpendingProfile>('PUT', '/spending', { json: s }),
     observed: (months: number) =>
       request<ObservedSpending>('GET', '/spending/observed', { query: { months } }),
+    /* v1.2 analytics — all exclude transfer-paired transactions */
+    summary: (params: { from?: string; to?: string } = {}) =>
+      request<SpendingSummary>('GET', '/spending/summary', {
+        query: { ...params, group_by: 'month' },
+      }),
+    recurring: () => request<RecurringCharge[]>('GET', '/spending/recurring'),
+    hotspots: (months: number) =>
+      request<SpendingHotspots>('GET', '/spending/hotspots', { query: { months } }),
+    forecast: (months: number) =>
+      request<SpendingForecast>('GET', '/spending/forecast', { query: { months } }),
+  },
+
+  /* v1.2 transfers & categorization */
+  transfers: {
+    candidates: () => request<TransferCandidate[]>('GET', '/transfers/candidates'),
+    /** 200 with both updated legs (link op, not resource creation — ruling) */
+    pair: (transactionIds: [number, number]) =>
+      request<Transaction[]>('POST', '/transfers/pair', { json: { transaction_ids: transactionIds } }),
+    /** unlink AND tombstone — never auto-paired again (ruling 2026-07-11) */
+    unpair: (pairId: number) => request<void>('DELETE', `/transfers/pair/${pairId}`),
+    /** persistent dismissal tombstone; the candidate never resurfaces (ruling 2026-07-11) */
+    dismissCandidate: (transactionIds: [number, number]) =>
+      request<void>('POST', '/transfers/candidates/dismiss', {
+        json: { transaction_ids: transactionIds },
+      }),
+  },
+
+  rules: {
+    list: () => request<CategoryRule[]>('GET', '/rules'),
+    create: (r: CategoryRuleCreate) => request<CategoryRule>('POST', '/rules', { json: r }),
+    patch: (id: number, r: CategoryRulePatch) => request<CategoryRule>('PATCH', `/rules/${id}`, { json: r }),
+    remove: (id: number) => request<void>('DELETE', `/rules/${id}`),
+    apply: () => request<ApplyRulesResult>('POST', '/rules/apply'),
+  },
+
+  categorize: {
+    /** heuristics-only in v1.2; the Claude implementation lands behind the same shape */
+    suggest: (payees: string[]) =>
+      request<SuggestResult>('POST', '/categorize/suggest', { json: { payees } }),
   },
 
   accounts: {
@@ -180,8 +232,20 @@ export const api = {
   },
 
   transactions: {
-    list: (params: { account_id?: number; from?: string; to?: string; limit?: number } = {}) =>
-      request<Transaction[]>('GET', '/transactions', { query: params }),
+    list: (
+      params: {
+        account_id?: number
+        from?: string
+        to?: string
+        limit?: number
+        /** v1.2: pass 1 for the uncategorized review queue */
+        uncategorized?: number
+      } = {},
+    ) => request<Transaction[]>('GET', '/transactions', { query: params }),
+    /** v1.2 bulk categorize — sets category_source: "manual";
+     * returns {updated} (ruling 2026-07-11) */
+    categorize: (ids: number[], category: string) =>
+      request<{ updated: number }>('POST', '/transactions/categorize', { json: { ids, category } }),
   },
 
   import: {
@@ -228,5 +292,12 @@ export const api = {
   settings: {
     get: () => request<Settings>('GET', '/settings'),
     patch: (s: Partial<Settings>) => request<Settings>('PATCH', '/settings', { json: s }),
+  },
+
+  /* v1.2 AI budget & admin — ships before any AI calls exist */
+  ai: {
+    settings: () => request<AiSettings>('GET', '/settings/ai'),
+    update: (s: AiSettingsUpdate) => request<AiSettings>('PUT', '/settings/ai', { json: s }),
+    usage: (months: number) => request<AiUsageMonth[]>('GET', '/ai/usage', { query: { months } }),
   },
 }

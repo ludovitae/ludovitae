@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
-import { useSettingsQuery } from '@/api/queries'
+import { useSettingsQuery, useTransferCandidates, useUncategorized } from '@/api/queries'
 import { useTheme } from '@/theme/ThemeProvider'
 import {
   IconAccounts,
@@ -11,6 +11,7 @@ import {
   IconHousehold,
   IconImport,
   IconLogout,
+  IconReview,
   IconScenarios,
   IconSettings,
   IconSpending,
@@ -18,6 +19,7 @@ import {
 
 // Order tells the plan's story: who's in it (Household), what they own
 // (Accounts), what life costs (Spending), then the what-ifs and dreams.
+// Review sits by Import — it's the follow-up chore imports create.
 const NAV = [
   { to: '/', label: 'Dashboard', icon: IconDashboard, end: true },
   { to: '/household', label: 'Household', icon: IconHousehold },
@@ -26,6 +28,7 @@ const NAV = [
   { to: '/scenarios', label: 'Scenarios', icon: IconScenarios },
   { to: '/goals', label: 'Goals', icon: IconGoals },
   { to: '/import', label: 'Import', icon: IconImport },
+  { to: '/review', label: 'Review', icon: IconReview },
   { to: '/settings', label: 'Settings', icon: IconSettings },
 ]
 
@@ -33,6 +36,13 @@ export function AppShell() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { theme, setTheme, setReduceMotion } = useTheme()
+
+  // Live review-queue badge: transfer candidates + uncategorized imports.
+  // Attention economics (DESIGN.md, owner rule): the count clears itself as
+  // items are handled, and the display caps at 9+ — never an unbounded "400".
+  const candidates = useTransferCandidates()
+  const uncategorized = useUncategorized()
+  const reviewCount = (candidates.data?.length ?? 0) + (uncategorized.data?.length ?? 0)
 
   // Server settings are the source of truth for the theme flag + motion.
   const settings = useSettingsQuery()
@@ -83,6 +93,14 @@ export function AppShell() {
                     <Icon />
                   </span>
                   {label}
+                  {to === '/review' && reviewCount > 0 ? (
+                    <span
+                      className="num ml-auto rounded-full bg-accent-soft px-1.5 py-px text-[11px] font-semibold text-accent"
+                      aria-label={`${reviewCount} items to review`}
+                    >
+                      {reviewCount > 9 ? '9+' : reviewCount}
+                    </span>
+                  ) : null}
                 </>
               )}
             </NavLink>

@@ -358,7 +358,25 @@ export function runMockSim({
   const cashShare = cash0 / Math.max(1, cash0 + invested0 + property0)
 
   return {
-    engine_version: 'mock-1.1',
+    // Engine v2 passthrough (T-011a shape): version, behavior notes, and the
+    // RESOLVED assumptions this run actually used (overrides included).
+    // The assumptions-strip UI consumes these in T-011b.
+    engine_version: '2',
+    engine_notes: ['Taxable Social Security capped at 85% (was 100%)'],
+    assumptions: {
+      market: {
+        stocks_mean_pct: RETURN_BY_CLASS.stocks!.mu * 100,
+        stocks_vol_pct: RETURN_BY_CLASS.stocks!.sigma * 100,
+        bonds_mean_pct: RETURN_BY_CLASS.bonds!.mu * 100,
+        bonds_vol_pct: RETURN_BY_CLASS.bonds!.sigma * 100,
+        cash_mean_pct: RETURN_BY_CLASS.cash!.mu * 100,
+        cash_vol_pct: RETURN_BY_CLASS.cash!.sigma * 100,
+      },
+      inflation_pct: Math.round(inflation * 1000) / 10,
+      effective_tax_rate_pct: profile.effective_tax_rate_pct,
+      ss_taxable_share: 0.85,
+      engine_version: '2',
+    },
     n_paths: nPaths,
     seed,
     start_year: startYear,

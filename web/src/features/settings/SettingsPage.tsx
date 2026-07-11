@@ -11,6 +11,7 @@ import { IconCheck } from '@/components/icons'
 import { useTheme } from '@/theme/ThemeProvider'
 import type { ModePref, ThemeName } from '@/theme/ThemeProvider'
 import { PageHeader } from '@/layout/AppShell'
+import { AiPanel } from './AiPanel'
 
 export function SettingsPage() {
   return (
@@ -19,6 +20,7 @@ export function SettingsPage() {
       <div className="flex max-w-2xl flex-col gap-4">
         <AppearanceCard />
         <ProfileCard />
+        <AiPanel />
         {MOCK ? (
           <p className="px-1 text-[11px] text-ink-3">
             Running against the built-in mock API (VITE_MOCK=1) — data resets on reload, login state persists.

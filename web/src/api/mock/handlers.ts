@@ -4,7 +4,11 @@
 import { ApiError } from '../client'
 import type {
   Account,
+  AiSettings,
+  AiSettingsUpdate,
+  AiUsageMonth,
   BalanceSnapshot,
+  CategoryRule,
   CompareResult,
   CsvMapping,
   DashboardData,
@@ -19,9 +23,18 @@ import type {
   SimulateRequest,
   SpendingCategory,
   SpendingProfileInput,
+  TransferCandidate,
 } from '../types'
 import { LIABILITY_TYPES } from '../types'
 import * as db from './db'
+import {
+  detectRecurring,
+  forecast,
+  freshnessOf,
+  hotspots,
+  spendingSummary,
+  suggestCategories,
+} from './analytics'
 import { runMockSim } from './sim'
 import { todayISO } from '@/lib/format'
 
@@ -49,6 +62,17 @@ function validateClaimAge(age: number | null | undefined) {
     throw new ApiError(400, 'invalid_claim_age', 'ss_claim_age must be between 62 and 70')
 }
 
+function aiSettings(): AiSettings {
+  return {
+    has_api_key: db.aiState.api_key !== null,
+    api_key_last4: db.aiState.api_key ? db.aiState.api_key.slice(-4) : null,
+    enabled: db.aiState.enabled,
+    monthly_budget_usd: db.aiState.monthly_budget_usd,
+    spend_this_month_usd: 0,
+    tokens_this_month: { input: 0, output: 0 },
+  }
+}
+
 function baselineScenario(): Scenario {
   return { id: 0, name: 'Current trajectory', description: 'Your plan as entered — no changes.', is_baseline: true, params: {} }
 }
@@ -69,6 +93,11 @@ function simulate(params: ScenarioParams, nPaths: number, seed: number) {
 function scenarioById(id: number): Scenario {
   if (id === 0) return baselineScenario()
   return db.scenarios.find((s) => s.id === id) ?? notFound('scenario')
+}
+
+/** Accounts are served with computed freshness (never trust stored value). */
+function serveAccount(a: Account): Account {
+  return { ...a, freshness: freshnessOf(a).freshness }
 }
 
 function dashboard(): DashboardData {
@@ -106,6 +135,16 @@ function dashboard(): DashboardData {
       pct_funded: g.target_amount ? Math.round((1000 * g.funded_amount) / g.target_amount) / 10 : 0,
     })),
     monthly_surplus: Math.round((income - outgo) * 100) / 100,
+    // v1.2: aging + stale only
+    stale_accounts: db.accounts
+      .map((a) => ({ a, f: freshnessOf(a) }))
+      .filter(({ f }) => f.freshness === 'aging' || f.freshness === 'stale')
+      .map(({ a, f }) => ({
+        id: a.id,
+        name: a.name,
+        freshness: f.freshness,
+        days_since_import: f.days_since_import,
+      })),
   }
 }
 
@@ -123,6 +162,8 @@ function observedSpending(monthsRaw: number): ObservedSpending {
 
   const sums = new Map<string, { total: number; count: number }>()
   for (const t of db.transactions) {
+    // v1.2: transfer-paired transactions are excluded from ALL analytics
+    if (t.transfer_pair_id !== null) continue
     if (t.amount >= 0 || t.date < from || t.date > to) continue
     const key = t.category.trim() || 'uncategorized'
     const cur = sums.get(key) ?? { total: 0, count: 0 }
@@ -254,12 +295,22 @@ async function importCommit(form: FormData) {
       continue
     }
     seen.add(key)
-    db.transactions.unshift({ id: db.nextId.transaction++, account_id: accountId, ...r })
+    db.transactions.unshift({
+      id: db.nextId.transaction++,
+      account_id: accountId,
+      transfer_pair_id: null,
+      category_source: r.category ? 'rule' : 'none',
+      ...r,
+    })
     imported++
   }
-  if (form.get('update_balance') === 'true') {
-    const acct = db.accounts.find((a) => a.id === accountId)
-    if (acct && rows.length > 0) {
+  const acct = db.accounts.find((a) => a.id === accountId)
+  if (acct) {
+    // v1.2 freshness bookkeeping
+    acct.last_import_at = `${todayISO()}T00:00:00`
+    const newest = rows.reduce<string | null>((mx, r) => (mx && mx >= r.date ? mx : r.date), acct.newest_transaction_date)
+    acct.newest_transaction_date = newest
+    if (form.get('update_balance') === 'true' && rows.length > 0) {
       const delta = rows.reduce((s, r) => s + r.amount, 0)
       setBalance(acct, Math.round((acct.balance + delta) * 100) / 100)
     }
@@ -415,12 +466,13 @@ async function route(
   if (key === 'GET /spending/observed') return observedSpending(Number(query?.months ?? 12))
 
   /* ---- accounts ---- */
-  if (key === 'GET /accounts') return db.accounts
+  if (key === 'GET /accounts') return db.accounts.map(serveAccount)
   if (key === 'POST /accounts') {
+    const input = body as Partial<Account>
+    const type = (input.type ?? 'checking') as Account['type']
     const a: Account = {
       id: db.nextId.account++,
       name: '',
-      type: 'checking',
       institution: '',
       balance: 0,
       growth_rate_pct: null,
@@ -429,16 +481,22 @@ async function route(
       include_in_net_worth: true,
       notes: '',
       created_at: todayISO(),
+      last_import_at: null,
+      newest_transaction_date: null,
+      staleness_days: null,
+      track_freshness: db.TRACK_FRESHNESS_DEFAULT.includes(type),
+      freshness: 'never',
       ...(body as object),
+      type,
     }
     db.accounts.push(a)
     db.balances.set(a.id, [{ date: todayISO(), amount: a.balance }])
-    return a
+    return serveAccount(a)
   }
   m = /^\/accounts\/(\d+)$/.exec(path)
   if (m) {
     const acct = db.accounts.find((a) => a.id === Number(m![1])) ?? notFound('account')
-    if (method === 'GET') return acct
+    if (method === 'GET') return serveAccount(acct)
     if (method === 'DELETE') {
       db.accounts.splice(db.accounts.indexOf(acct), 1)
       return undefined
@@ -446,8 +504,8 @@ async function route(
     if (method === 'PATCH') {
       const patch = body as Partial<Account>
       if (typeof patch.balance === 'number') setBalance(acct, patch.balance)
-      const { balance: _b, ...rest } = patch
-      return Object.assign(acct, rest)
+      const { balance: _b, freshness: _f, ...rest } = patch
+      return serveAccount(Object.assign(acct, rest))
     }
   }
   m = /^\/accounts\/(\d+)\/balances$/.exec(path)
@@ -519,8 +577,161 @@ async function route(
     if (accountId !== undefined) out = out.filter((t) => t.account_id === Number(accountId))
     if (query?.from) out = out.filter((t) => t.date >= String(query.from))
     if (query?.to) out = out.filter((t) => t.date <= String(query.to))
+    // v1.2: review queue — uncategorized and not a paired transfer
+    if (String(query?.uncategorized ?? '') === '1')
+      out = out.filter((t) => t.category.trim() === '' && t.transfer_pair_id === null)
     const limit = Number(query?.limit ?? 200)
     return out.slice(0, limit)
+  }
+  // v1.2 bulk categorize (source: manual) → {updated} (ruling 2026-07-11)
+  if (key === 'POST /transactions/categorize') {
+    const req = body as unknown as { ids: number[]; category: string }
+    let updated = 0
+    for (const t of db.transactions) {
+      if (req.ids.includes(t.id)) {
+        t.category = req.category
+        t.category_source = 'manual'
+        updated++
+      }
+    }
+    return { updated }
+  }
+
+  /* ---- transfers (v1.2, tombstone rulings 2026-07-11) ---- */
+  if (key === 'GET /transfers/candidates') {
+    const byId = new Map(db.transactions.map((t) => [t.id, t]))
+    const out: TransferCandidate[] = []
+    for (const c of db.transferCandidates) {
+      const a = byId.get(c.txn_ids[0])
+      const b = byId.get(c.txn_ids[1])
+      // pairing a leg or tombstoning (dismiss/unpair) retires the candidate
+      if (!a || !b || a.transfer_pair_id !== null || b.transfer_pair_id !== null) continue
+      if (db.transferTombstones.has(db.tombstoneKey(a.id, b.id))) continue
+      out.push({ score: c.score, txns: [a, b] })
+    }
+    return out.sort((a, b) => b.score - a.score)
+  }
+  if (key === 'POST /transfers/pair') {
+    const req = body as unknown as { transaction_ids: [number, number] }
+    const txns = req.transaction_ids.map(
+      (id) => db.transactions.find((t) => t.id === id) ?? notFound('transaction'),
+    )
+    if (txns.some((t) => t.transfer_pair_id !== null))
+      throw new ApiError(409, 'already_paired', 'A leg is already part of a transfer pair')
+    const pairId = db.nextId.transferPair++
+    for (const t of txns) t.transfer_pair_id = pairId
+    // manual pairing clears any tombstone for this pair
+    db.transferTombstones.delete(db.tombstoneKey(txns[0]!.id, txns[1]!.id))
+    return txns
+  }
+  if (key === 'POST /transfers/candidates/dismiss') {
+    const req = body as unknown as { transaction_ids: [number, number] }
+    const txns = req.transaction_ids.map(
+      (id) => db.transactions.find((t) => t.id === id) ?? notFound('transaction'),
+    )
+    if (txns.some((t) => t.transfer_pair_id !== null))
+      throw new ApiError(409, 'already_paired', 'A leg is already part of a transfer pair')
+    db.transferTombstones.add(db.tombstoneKey(txns[0]!.id, txns[1]!.id))
+    return undefined // 204 — persistent, the candidate never resurfaces
+  }
+  m = /^\/transfers\/pair\/(\d+)$/.exec(path)
+  if (m && method === 'DELETE') {
+    const pairId = Number(m[1])
+    const legs = db.transactions.filter((t) => t.transfer_pair_id === pairId)
+    if (legs.length === 0) notFound('transfer pair')
+    for (const t of legs) t.transfer_pair_id = null
+    // unlink AND tombstone: never auto-paired again (manual re-pair allowed)
+    if (legs.length === 2) db.transferTombstones.add(db.tombstoneKey(legs[0]!.id, legs[1]!.id))
+    return undefined
+  }
+
+  /* ---- category rules (v1.2) ---- */
+  if (key === 'GET /rules') return [...db.rules].sort((a, b) => a.priority - b.priority)
+  if (key === 'POST /rules') {
+    const r: CategoryRule = {
+      id: db.nextId.rule++,
+      pattern: '',
+      match: 'contains',
+      field: 'payee',
+      category: '',
+      priority: db.rules.length + 1,
+      ...(body as object),
+    }
+    db.rules.push(r)
+    return r
+  }
+  if (key === 'POST /rules/apply') {
+    const sorted = [...db.rules].sort((a, b) => a.priority - b.priority)
+    let recategorized = 0
+    for (const t of db.transactions) {
+      // retroactive over uncategorized + rule/heuristic-sourced; never manual
+      if (t.category_source === 'manual' || t.category_source === 'ai') continue
+      if (t.transfer_pair_id !== null) continue
+      const payee = t.payee.toLowerCase()
+      const rule = sorted.find((r) =>
+        r.match === 'exact' ? payee === r.pattern.toLowerCase() : payee.includes(r.pattern.toLowerCase()),
+      )
+      if (rule && (t.category !== rule.category || t.category_source === 'none')) {
+        t.category = rule.category
+        t.category_source = 'rule'
+        recategorized++
+      }
+    }
+    return { recategorized }
+  }
+  m = /^\/rules\/(\d+)$/.exec(path)
+  if (m) {
+    const r = db.rules.find((x) => x.id === Number(m![1])) ?? notFound('rule')
+    if (method === 'PATCH') return Object.assign(r, body)
+    if (method === 'DELETE') {
+      db.rules.splice(db.rules.indexOf(r), 1)
+      return undefined
+    }
+  }
+
+  /* ---- categorization suggest (v1.2 — heuristics only, AI stubbed) ---- */
+  if (key === 'POST /categorize/suggest') {
+    const req = body as unknown as { payees: string[] }
+    return suggestCategories(req.payees ?? [])
+  }
+
+  /* ---- spending analytics (v1.2) ---- */
+  if (key === 'GET /spending/summary')
+    return spendingSummary(query?.from ? String(query.from) : undefined, query?.to ? String(query.to) : undefined)
+  if (key === 'GET /spending/recurring') return detectRecurring()
+  if (key === 'GET /spending/hotspots') return hotspots(Number(query?.months ?? 6))
+  if (key === 'GET /spending/forecast') return forecast(Number(query?.months ?? 12))
+
+  /* ---- AI budget & admin (v1.2) ---- */
+  if (key === 'GET /settings/ai') return aiSettings()
+  if (key === 'PUT /settings/ai') {
+    const patch = body as unknown as AiSettingsUpdate
+    if ('api_key' in patch) db.aiState.api_key = patch.api_key ?? null
+    if (patch.enabled !== undefined) db.aiState.enabled = patch.enabled
+    if (patch.monthly_budget_usd !== undefined) {
+      if (!(patch.monthly_budget_usd >= 0))
+        throw new ApiError(400, 'invalid_budget', 'monthly_budget_usd must be ≥ 0')
+      db.aiState.monthly_budget_usd = patch.monthly_budget_usd
+    }
+    return aiSettings()
+  }
+  if (key === 'GET /ai/usage') {
+    const months = Math.min(24, Math.max(1, Number(query?.months ?? 6)))
+    const out: AiUsageMonth[] = []
+    const d = new Date()
+    d.setDate(1)
+    for (let i = 0; i < months; i++) {
+      const m = new Date(d)
+      m.setMonth(d.getMonth() - i)
+      out.push({
+        month: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`,
+        input_tokens: 0,
+        output_tokens: 0,
+        est_cost_usd: 0,
+        by_purpose: { categorize: { input_tokens: 0, output_tokens: 0, est_cost_usd: 0 } },
+      })
+    }
+    return out
   }
 
   /* ---- import ---- */
