@@ -13,6 +13,8 @@ import {
   useSimulation,
 } from '@/api/queries'
 import type { HouseholdMember, Scenario, ScenarioEvent, ScenarioParams } from '@/api/types'
+import { AssumptionsStrip } from './AssumptionsStrip'
+import { WhatMovedNote } from './WhatMovedNote'
 import { FanChart } from '@/charts/FanChart'
 import type { FanChartSeries } from '@/charts/FanChart'
 import { toMarkers } from '@/charts/milestones'
@@ -100,6 +102,10 @@ export function ScenariosPage() {
   const spendingDelta = draft.spending_delta_pct ?? 0
   const retiringMembers = (household ?? []).filter((m) => m.retirement_age != null)
   const ssMembers = (household ?? []).filter((m) => m.ss_monthly_at_fra != null)
+
+  // T-011: whichever mode is live, one result carries the engine identity
+  // for the single "what moved" note near the chart.
+  const currentSim = comparing && compare.data ? compare.data.results[0] : sim.data
 
   function togglePin(id: number) {
     setPinned((prev) => {
@@ -235,6 +241,9 @@ export function ScenariosPage() {
 
         {/* ------------------------------ results --------------------------- */}
         <div className="flex min-w-0 flex-col gap-4">
+          {currentSim ? (
+            <WhatMovedNote engineVersion={currentSim.engine_version} notes={currentSim.engine_notes} />
+          ) : null}
           {comparing && compare.data ? (
             <CompareView
               results={compare.data.results}
@@ -385,6 +394,7 @@ function SingleView({
             height={360}
           />
         </div>
+        <AssumptionsStrip assumptions={simData.assumptions} />
       </Card>
     </>
   )
@@ -462,6 +472,18 @@ function CompareView({
             ariaLabel="Scenario comparison chart"
           />
         </div>
+        {/* Scenario return/inflation overrides resolve into per-run assumptions;
+         * when pinned runs differ, say so instead of pretending one truth. */}
+        <AssumptionsStrip
+          assumptions={first!.assumptions}
+          note={
+            results.some(
+              (r) => JSON.stringify(r!.assumptions) !== JSON.stringify(first!.assumptions),
+            )
+              ? `varies by scenario — shown: ${first!.name}`
+              : undefined
+          }
+        />
       </Card>
 
       <Card>
