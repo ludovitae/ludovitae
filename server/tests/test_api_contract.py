@@ -528,7 +528,7 @@ def test_401_shape_on_every_unauthenticated_read(client):
                  "/dashboard", "/settings", "/transactions",
                  "/transfers/candidates", "/rules", "/spending/summary",
                  "/spending/recurring", "/spending/hotspots",
-                 "/spending/forecast", "/settings/ai", "/ai/usage"):
+                 "/spending/forecast", "/settings/ai", "/ai/usage", "/export"):
         resp = client.get(f"/api/v1{path}")
         assert resp.status_code == 401, path
         assert resp.json() == {
