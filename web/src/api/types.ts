@@ -65,6 +65,17 @@ export type AssetClass = 'stocks' | 'bonds' | 'cash' | 'mixed'
 /** v1.2 import freshness — server-computed from last_import_at + threshold. */
 export type Freshness = 'fresh' | 'aging' | 'stale' | 'never' | 'off'
 
+/** Contract default: freshness tracked for cash/card/investment types,
+ * off for property/vehicle/other (non-transactional) types. */
+export const FRESHNESS_TRACKED_TYPES: readonly AccountType[] = [
+  'checking',
+  'savings',
+  'brokerage',
+  'retirement',
+  'hsa',
+  'credit_card',
+]
+
 export interface Account {
   id: number
   name: string

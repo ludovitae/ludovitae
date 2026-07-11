@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useDashboard } from '@/api/queries'
-import type { DashboardData } from '@/api/types'
+import type { DashboardData, StaleAccount } from '@/api/types'
 import { LIABILITY_TYPES } from '@/api/types'
 import { AreaChart } from '@/charts/AreaChart'
 import { Button } from '@/components/Button'
@@ -9,7 +9,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/Skeleton'
 import { formatMoney, formatMoneyDelta } from '@/lib/format'
 import { PageHeader } from '@/layout/AppShell'
-import { IconPlus } from '@/components/icons'
+import { IconChevronRight, IconPlus, IconWarning } from '@/components/icons'
 
 const TYPE_LABELS: Record<string, string> = {
   checking: 'Checking',
@@ -61,6 +61,8 @@ export function DashboardPage() {
   return (
     <>
       <PageHeader title="Dashboard" hint="Where things stand today" />
+
+      {data.stale_accounts.length > 0 ? <StaleStrip accounts={data.stale_accounts} /> : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Hero */}
@@ -143,6 +145,41 @@ export function DashboardPage() {
         </Card>
       </div>
     </>
+  )
+}
+
+/** Stale-accounts warning strip. The whole strip is the affordance and it
+ * NAVIGATES to Accounts — per the v1.2 ruling there is no suppression:
+ * warnings clear by importing fresh data, not by dismissing them. */
+function StaleStrip({ accounts }: { accounts: StaleAccount[] }) {
+  const stale = accounts.filter((a) => a.freshness === 'stale')
+  const preview = accounts
+    .slice(0, 3)
+    .map((a) => `${a.name}${a.days_since_import !== null ? ` (${a.days_since_import}d)` : ''}`)
+    .join(', ')
+  const more = accounts.length > 3 ? ` and ${accounts.length - 3} more` : ''
+  return (
+    <Link
+      to="/accounts"
+      className="group mb-4 flex items-center gap-3 rounded-(--radius-m) border border-(--warning)/50 bg-warning/10 px-4 py-3 transition-colors duration-150 hover:bg-warning/15"
+      aria-label={`${accounts.length} accounts need fresh data — go to Accounts`}
+    >
+      <span className="shrink-0 text-warning">
+        <IconWarning width={16} height={16} />
+      </span>
+      <p className="min-w-0 flex-1 truncate text-[13px] text-ink-2">
+        <span className="font-medium text-ink">
+          {accounts.length === 1 ? 'One account needs' : `${accounts.length} accounts need`} fresh data
+          {stale.length > 0 ? ` — ${stale.length} already stale` : ''}.
+        </span>{' '}
+        {preview}
+        {more}
+      </p>
+      <span className="flex shrink-0 items-center gap-0.5 text-[12px] font-medium text-ink-2 group-hover:text-ink">
+        Update accounts
+        <IconChevronRight width={14} height={14} />
+      </span>
+    </Link>
   )
 }
 

@@ -3,7 +3,6 @@
 
 import type {
   Account,
-  AccountType,
   BalanceSnapshot,
   CategoryRule,
   Flow,
@@ -15,7 +14,7 @@ import type {
   SpendingProfile,
   Transaction,
 } from '../types'
-import { LIABILITY_TYPES } from '../types'
+import { FRESHNESS_TRACKED_TYPES, LIABILITY_TYPES } from '../types'
 import { mulberry32, gaussian } from './rng'
 import { todayISO } from '@/lib/format'
 
@@ -54,14 +53,7 @@ function daysAgoISO(n: number): string {
 }
 
 /** v1.2 contract default: freshness is tracked for cash/card/investment types. */
-export const TRACK_FRESHNESS_DEFAULT: readonly AccountType[] = [
-  'checking',
-  'savings',
-  'brokerage',
-  'retirement',
-  'hsa',
-  'credit_card',
-]
+export const TRACK_FRESHNESS_DEFAULT = FRESHNESS_TRACKED_TYPES
 
 export const accounts: Account[] = [
   // freshness spread on purpose: fresh / aging / stale / never / off all demo.
