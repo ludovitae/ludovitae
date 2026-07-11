@@ -37,3 +37,20 @@ Engine integration, withdrawal-ordering optimization, state tax, AMT/NIIT.
 
 - 2026-07-11 (coordinator): created; phase 1 is deliberately standalone so it
   can build in parallel with everything else without merge conflicts.
+- 2026-07-11 (backend-dev): phase 1 complete on `ws/tax-brackets`; status →
+  review. New files only (zero conflict surface): `server/src/gol/tax/`
+  (federal.py, social_security.py, plan.py), 3 test files (57 tests, suite
+  162 → 219, ruff clean), `docs/TAX-DESIGN.md`. Decisions of note:
+  (a) 2026 parameters are the **final published** Rev. Proc. 2025-32 figures
+  (post-OBBBA), verified 2026-07-11 against irs.gov and taxfoundation.org —
+  not projections; (b) SS taxability thresholds shipped deliberately
+  unindexed per IRC §86(c), with a test pinning them against accidental
+  indexing; (c) withdrawal gross-up proposal: marginal-rate estimate
+  monthly + exact December settle-up (annual tax always exact; closed-form
+  piecewise-linear inversion documented as the fallback if true-up cash
+  cliffs show up in validation); (d) `effective_tax_rate_pct` proposed to
+  become a nullable flat-override, preserving T-005 sim-identity for
+  migrated profiles. Flag for coordinator: the proposed `tax_model` field in
+  the simulate assumptions block is an API-contract addition (needs a
+  ruling, coordinate with T-011a); filing-status rule ≥2-adults→MFJ has an
+  `other`-adult wrinkle, refinement proposed in TAX-DESIGN.md §5.
