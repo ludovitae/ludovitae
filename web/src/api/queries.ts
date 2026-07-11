@@ -355,6 +355,14 @@ export function useUnpairTransfer() {
   )
 }
 
+/** Persistent server-side dismissal (tombstone) — ruling 2026-07-11. */
+export function useDismissCandidate() {
+  return useInvalidating(
+    (ids: [number, number]) => api.transfers.dismissCandidate(ids),
+    [qk.transferCandidates],
+  )
+}
+
 export function useCategorizeTransactions() {
   return useInvalidating(
     (ids: number[], category: string) => api.transactions.categorize(ids, category),

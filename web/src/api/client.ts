@@ -178,9 +178,16 @@ export const api = {
   /* v1.2 transfers & categorization */
   transfers: {
     candidates: () => request<TransferCandidate[]>('GET', '/transfers/candidates'),
+    /** 200 with both updated legs (link op, not resource creation — ruling) */
     pair: (transactionIds: [number, number]) =>
       request<Transaction[]>('POST', '/transfers/pair', { json: { transaction_ids: transactionIds } }),
+    /** unlink AND tombstone — never auto-paired again (ruling 2026-07-11) */
     unpair: (pairId: number) => request<void>('DELETE', `/transfers/pair/${pairId}`),
+    /** persistent dismissal tombstone; the candidate never resurfaces (ruling 2026-07-11) */
+    dismissCandidate: (transactionIds: [number, number]) =>
+      request<void>('POST', '/transfers/candidates/dismiss', {
+        json: { transaction_ids: transactionIds },
+      }),
   },
 
   rules: {
@@ -235,10 +242,10 @@ export const api = {
         uncategorized?: number
       } = {},
     ) => request<Transaction[]>('GET', '/transactions', { query: params }),
-    /** v1.2 bulk categorize — sets category_source: "manual".
-     * Response body unspecified in the contract; don't depend on it. */
+    /** v1.2 bulk categorize — sets category_source: "manual";
+     * returns {updated} (ruling 2026-07-11) */
     categorize: (ids: number[], category: string) =>
-      request<unknown>('POST', '/transactions/categorize', { json: { ids, category } }),
+      request<{ updated: number }>('POST', '/transactions/categorize', { json: { ids, category } }),
   },
 
   import: {

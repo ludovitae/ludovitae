@@ -383,6 +383,14 @@ export const transactions: Transaction[] = (() => {
   // Amazon Prime — annual cadence needs 3 occurrences to be detected.
   for (const m of [25, 13, 1]) push(12, monthISO(m, 20), -139, 'Amazon Prime', 'subscriptions')
 
+  // Weekly spending HABIT (not a subscription): steady cadence, jittered
+  // amounts (variability > 5%) — demos the radar's subscriptions-vs-habits
+  // segmentation from the amount_variability_pct ruling.
+  for (let w = 0; w < 104; w++) {
+    const jitter = 1 + (rng() - 0.5) * 0.36
+    push(1, daysAgoISO(7 * w + 2), -(62 * jitter), 'Green Basket Farm Share', 'groceries', 'heuristic')
+  }
+
   // uncategorized review-queue rows
   for (const [payee, amount, ago, account] of UNCATEGORIZED)
     push(account, daysAgoISO(ago), amount, payee, '')
@@ -416,6 +424,15 @@ export const transferCandidates: { txn_ids: [number, number]; score: number }[] 
   }
   return out
 })()
+
+/** Tombstones (ruling 2026-07-11): dismissed candidates and unpaired pairs
+ * never auto-resurface. Key = sorted "a:b" transaction-id pair. Manual
+ * POST /transfers/pair clears the tombstone. */
+export const transferTombstones = new Set<string>()
+
+export function tombstoneKey(a: number, b: number): string {
+  return a < b ? `${a}:${b}` : `${b}:${a}`
+}
 
 /* ----------------------- category rules (v1.2) --------------------------- */
 

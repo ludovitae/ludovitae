@@ -11,7 +11,13 @@ import { Card, CardHeader } from '@/components/Card'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/Skeleton'
 import { formatDate, formatMoney } from '@/lib/format'
-import { CADENCE_LABELS, groupRecurring, monthlyTotal, priceChangeLabel } from '@/lib/recurring'
+import {
+  CADENCE_LABELS,
+  groupRecurring,
+  isSubscriptionLike,
+  monthlyTotal,
+  priceChangeLabel,
+} from '@/lib/recurring'
 
 export function RecurringTab() {
   const recurring = useSpendingRecurring()
@@ -46,15 +52,21 @@ export function RecurringTab() {
 
   const forgottenPayees = new Set((hotspots.data?.possibly_forgotten ?? []).map((r) => r.payee))
   const groups = groupRecurring(charges, forgottenPayees)
-  const activeAll = [...groups.forgotten, ...groups.active]
-  const monthly = monthlyTotal(activeAll)
+  // ruling 2026-07-11: segment true subscriptions (low amount variability)
+  // from spending habits so the radar isn't polluted — stat tiles speak
+  // about subscriptions; habits get their own section with a subtotal.
+  const subscriptionsAll = [...groups.forgotten, ...groups.subscriptions].sort(
+    (a, b) => b.monthly_equivalent - a.monthly_equivalent,
+  )
+  const monthly = monthlyTotal(subscriptionsAll)
+  const habitsMonthly = monthlyTotal(groups.habits)
 
   return (
     <div className="flex flex-col gap-4">
       {/* stat row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <StatTile label="Active recurring" value={String(activeAll.length)} sub="charges" />
-        <StatTile label="Monthly total" value={formatMoney(monthly, { cents: true })} sub="per month" />
+        <StatTile label="Active subscriptions" value={String(subscriptionsAll.length)} sub="steady charges" />
+        <StatTile label="Monthly total" value={formatMoney(monthly, { cents: true })} sub="subscriptions per month" />
         <StatTile label="Yearly equivalent" value={formatMoney(monthly * 12)} sub="if nothing changes" />
       </div>
 
@@ -103,17 +115,48 @@ export function RecurringTab() {
               </tr>
             </thead>
             <tbody>
-              {activeAll.map((c) => (
+              <SectionRow label="Subscriptions & bills" detail={`${formatMoney(monthly, { cents: true })}/mo`} />
+              {subscriptionsAll.map((c) => (
                 <RadarRow key={c.payee} c={c} forgotten={forgottenPayees.has(c.payee)} />
               ))}
-              {groups.lapsed.map((c) => (
-                <RadarRow key={c.payee} c={c} />
-              ))}
+              {groups.habits.length > 0 ? (
+                <>
+                  <SectionRow
+                    label="Spending habits"
+                    detail={`${formatMoney(habitsMonthly, { cents: true })}/mo`}
+                    hint="regular rhythm, variable amounts"
+                  />
+                  {groups.habits.map((c) => (
+                    <RadarRow key={c.payee} c={c} />
+                  ))}
+                </>
+              ) : null}
+              {groups.lapsed.length > 0 ? (
+                <>
+                  <SectionRow label="Lapsed" />
+                  {groups.lapsed.map((c) => (
+                    <RadarRow key={c.payee} c={c} />
+                  ))}
+                </>
+              ) : null}
             </tbody>
           </table>
         </div>
       </Card>
     </div>
+  )
+}
+
+/** Table section divider: group label + optional subtotal, spanning the row. */
+function SectionRow({ label, detail, hint }: { label: string; detail?: string; hint?: string }) {
+  return (
+    <tr className="border-b border-edge bg-surface-3">
+      <th colSpan={7} scope="colgroup" className="px-5 py-1.5 text-left">
+        <span className="text-[11px] font-semibold tracking-wide text-ink-3 uppercase">{label}</span>
+        {hint ? <span className="ml-2 text-[11px] font-normal text-ink-3">{hint}</span> : null}
+        {detail ? <span className="num float-right text-[11px] font-medium text-ink-2">{detail}</span> : null}
+      </th>
+    </tr>
   )
 }
 
@@ -128,7 +171,8 @@ function StatTile({ label, value, sub }: { label: string; value: string; sub: st
 }
 
 function RadarRow({ c, forgotten }: { c: RecurringCharge; forgotten?: boolean }) {
-  const change = priceChangeLabel(c.price_change_pct)
+  // habits' "price change" is jitter, never a repricing — no badge there
+  const change = isSubscriptionLike(c) ? priceChangeLabel(c.price_change_pct) : null
   return (
     <tr className={`border-b border-edge last:border-0 ${c.active ? '' : 'opacity-55'}`}>
       <td className="px-5 py-2.5">

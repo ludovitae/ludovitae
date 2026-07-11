@@ -23,10 +23,10 @@ describe('review queues (mock API)', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    // live nav badge = 2 candidates + 16 uncategorized (12 imports + the 4
-    // unpaired near-miss legs, which are honestly uncategorized until paired)
+    // live nav badge: 2 candidates + 16 uncategorized underneath, but
+    // attention economics caps the display at 9+ (owner rule, DESIGN.md)
     const reviewLink = await screen.findByRole('link', { name: /Review/ }, { timeout: 8000 })
-    await waitFor(() => expect(reviewLink.textContent).toContain('18'), { timeout: 8000 })
+    await waitFor(() => expect(reviewLink.textContent).toContain('9+'), { timeout: 8000 })
     await user.click(reviewLink)
 
     // both candidates render with score pills and both legs side-by-side
@@ -42,10 +42,22 @@ describe('review queues (mock API)', () => {
     await user.click(screen.getByRole('button', { name: /Pair Sapphire Card Payment/ }))
     await waitFor(() => expect(screen.queryByText('86% match')).toBeNull(), { timeout: 8000 })
 
-    // dismiss the other (client-side)
+    // dismiss the other — a real POST /transfers/candidates/dismiss
+    // tombstone (ruling 2026-07-11); the queue refetches empty
     await user.click(screen.getByRole('button', { name: /Dismiss candidate/ }))
     await screen.findByText('No transfers waiting', undefined, { timeout: 8000 })
   }, 60000)
+
+  it('a dismissed candidate stays gone (persistent tombstone, not view state)', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    // fresh mount over the same mock db: the dismissal from the previous
+    // test holds server-side — nothing resurfaces
+    await user.click(await screen.findByRole('link', { name: /Review/ }, { timeout: 8000 }))
+    await screen.findByText('No transfers waiting', undefined, { timeout: 8000 })
+    expect(screen.queryByText(/% match/)).toBeNull()
+  }, 40000)
 
   it('bulk categorizes, applies a suggestion chip, and creates a rule from a payee', async () => {
     const user = userEvent.setup()

@@ -24,13 +24,16 @@ export function ForecastTab() {
   const data = forecast.data
   if (!data) return null
 
-  const recurringNow = data.recurring[0] ?? 0
-  const variable = data.months.map((_, i) =>
-    data.variable_by_category.reduce((s, c) => s + (c.totals[i] ?? 0), 0),
-  )
-  const variableNow = variable[0] ?? 0
+  // T-007 shape: variable_by_category is flat {category, monthly_avg} — the
+  // client derives the constant series; recurring VARIES by month (annual
+  // charges lump in their anniversary month), so the stat line shows the
+  // monthly average.
+  const variableMonthly = data.variable_by_category.reduce((s, c) => s + c.monthly_avg, 0)
+  const variable = data.months.map(() => variableMonthly)
+  const recurringAvg =
+    data.recurring.length > 0 ? data.recurring.reduce((s, v) => s + v, 0) / data.recurring.length : 0
 
-  if (recurringNow + variableNow === 0) {
+  if (recurringAvg + variableMonthly === 0) {
     return (
       <Card>
         <EmptyState
@@ -43,7 +46,7 @@ export function ForecastTab() {
   }
 
   const topVariable = [...data.variable_by_category]
-    .sort((a, b) => (b.totals[0] ?? 0) - (a.totals[0] ?? 0))
+    .sort((a, b) => b.monthly_avg - a.monthly_avg)
     .slice(0, 6)
 
   return (
@@ -79,10 +82,11 @@ export function ForecastTab() {
         </div>
         {/* visible per-series values (contrast relief; tooltips only enhance) */}
         <p className="border-t border-edge px-5 py-2.5 text-[12px] text-ink-2">
-          <span className="num font-semibold text-ink">{formatMoney(recurringNow)}</span>/mo recurring +{' '}
-          <span className="num font-semibold text-ink">{formatMoney(variableNow)}</span>/mo variable ≈{' '}
-          <span className="num font-semibold text-ink">{formatMoney(recurringNow + variableNow)}</span>/mo —{' '}
-          <span className="num">{formatMoney((recurringNow + variableNow) * 12)}</span> over the year.
+          ≈ <span className="num font-semibold text-ink">{formatMoney(recurringAvg)}</span>/mo recurring
+          (annual charges land in their anniversary month) +{' '}
+          <span className="num font-semibold text-ink">{formatMoney(variableMonthly)}</span>/mo variable ≈{' '}
+          <span className="num font-semibold text-ink">{formatMoney(recurringAvg + variableMonthly)}</span>/mo —{' '}
+          <span className="num">{formatMoney((recurringAvg + variableMonthly) * 12)}</span> over the year.
         </p>
       </Card>
 
@@ -93,7 +97,7 @@ export function ForecastTab() {
             <li key={c.category} className="flex items-baseline justify-between gap-3 border-b border-(--border) py-2 last:border-0">
               <span className="truncate text-[13px] text-ink capitalize">{c.category}</span>
               <span className="num text-[13px] font-medium text-ink">
-                {formatMoney(c.totals[0] ?? 0)}
+                {formatMoney(c.monthly_avg)}
                 <span className="font-normal text-ink-3">/mo</span>
               </span>
             </li>

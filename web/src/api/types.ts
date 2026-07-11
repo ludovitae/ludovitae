@@ -232,7 +232,8 @@ export interface ApplyRulesResult {
 
 export interface CategorySuggestion {
   payee: string
-  category: string
+  /** null when no heuristic matched — the response stays positional (ruling 2026-07-11) */
+  category: string | null
   confidence: number
 }
 
@@ -272,6 +273,9 @@ export interface RecurringCharge {
   /** seen within 1.5× cadence */
   active: boolean
   monthly_equivalent: number
+  /** stddev/median of occurrence amounts × 100 (ruling 2026-07-11) — lets the
+   * UI segment true subscriptions (≤ ~5%) from spending habits */
+  amount_variability_pct: number
 }
 
 export interface SpendingHotspots {
@@ -289,9 +293,12 @@ export interface SpendingHotspots {
 
 export interface SpendingForecast {
   months: string[]
-  /** projected recurring total per month, aligned with `months` */
+  /** projected recurring total per month, aligned with `months` — annual
+   * charges lump in their anniversary month (T-007 pinned shape) */
   recurring: number[]
-  variable_by_category: { category: string; totals: number[] }[]
+  /** flat per-category averages (6-full-month lookback, recurring payees
+   * excluded); the client derives constant series */
+  variable_by_category: { category: string; monthly_avg: number }[]
   total: number[]
 }
 
@@ -416,8 +423,31 @@ export interface Milestone {
   member_id: number
 }
 
+/** Engine v2 (T-011a): the resolved PlanInputs the run actually used —
+ * scenario overrides included, never re-read from the DB. */
+export interface SimAssumptions {
+  market: {
+    stocks_mean_pct: number
+    stocks_vol_pct: number
+    bonds_mean_pct: number
+    bonds_vol_pct: number
+    cash_mean_pct: number
+    cash_vol_pct: number
+  }
+  inflation_pct: number
+  effective_tax_rate_pct: number
+  ss_taxable_share: number
+  engine_version: string
+  /** reserved for the T-012 phase-2 integration */
+  tax_model?: 'flat' | 'brackets'
+}
+
 export interface SimResult {
   engine_version: string
+  /** engine v2: human-readable behavior changes since the prior engine version */
+  engine_notes: string[]
+  /** faithful passthrough — the assumptions strip UI is T-011b */
+  assumptions: SimAssumptions
   n_paths: number
   seed: number
   start_year: number

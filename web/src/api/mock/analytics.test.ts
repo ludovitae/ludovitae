@@ -3,7 +3,14 @@
  * price hike, the forgotten group, freshness states. */
 
 import { describe, expect, it } from 'vitest'
-import { detectRecurring, forecast, freshnessOf, hotspots, spendingSummary } from './analytics'
+import {
+  detectRecurring,
+  forecast,
+  freshnessOf,
+  hotspots,
+  spendingSummary,
+  suggestCategories,
+} from './analytics'
 import * as db from './db'
 import type { Account } from '../types'
 
@@ -58,6 +65,17 @@ describe('detectRecurring', () => {
   it('marks the cancelled subscription lapsed', () => {
     expect(byPayee.get('HBO Max')!.active).toBe(false)
   })
+
+  it('reports amount variability (ruling 2026-07-11) — flat subs 0, hikes and habits > 5', () => {
+    expect(byPayee.get('Spotify')!.amount_variability_pct).toBe(0)
+    expect(byPayee.get('Apex Gym')!.amount_variability_pct).toBe(0)
+    // the step change makes Netflix "variable" by the raw metric (~7%)
+    expect(byPayee.get('Netflix')!.amount_variability_pct).toBeGreaterThan(5)
+    // the weekly habit is detected but clearly variable
+    const habit = byPayee.get('Green Basket Farm Share')!
+    expect(habit.cadence).toBe('weekly')
+    expect(habit.amount_variability_pct).toBeGreaterThan(5)
+  })
 })
 
 describe('hotspots', () => {
@@ -69,33 +87,61 @@ describe('hotspots', () => {
     expect(payees).toContain('CloudVault Storage')
     // too young (8 months)
     expect(payees).not.toContain('Spotify')
-    // price change disqualifies
+    // variability > 5% disqualifies (Netflix via its hike, the habit via jitter)
     expect(payees).not.toContain('Netflix')
-    // big fixed bills are not "forgotten"
+    expect(payees).not.toContain('Green Basket Farm Share')
+    // ≤ $100/mo cap: a mortgage is recurring, not forgettable (ruling)
     expect(payees).not.toContain('Rocket Mortgage')
   })
 
-  it('lists the price increase and the dining spike', () => {
+  it('lists the price increase and the dining spike (increases only, ≥ 20%)', () => {
     expect(h.price_increases.map((r) => r.payee)).toContain('Netflix')
     const dining = h.category_spikes.find((s) => s.category === 'dining')
     expect(dining).toBeDefined()
-    expect(dining!.delta_pct).toBeGreaterThan(10)
+    expect(dining!.delta_pct).toBeGreaterThanOrEqual(20)
+    // T-007 windows: increases only, over a ≥ $20/mo baseline
+    for (const s of h.category_spikes) {
+      expect(s.delta_pct).toBeGreaterThanOrEqual(20)
+      expect(s.baseline_monthly_avg).toBeGreaterThanOrEqual(20)
+    }
   })
 
-  it('top merchants exclude paired transfer payees', () => {
-    expect(h.top_merchants.map((t) => t.payee)).not.toContain('Payment to Sapphire Card')
+  it('top merchants: max 10, store numbers folded, paired transfers excluded', () => {
+    expect(h.top_merchants.length).toBeLessThanOrEqual(10)
+    const payees = h.top_merchants.map((t) => t.payee)
+    expect(payees).not.toContain('Payment to Sapphire Card')
+    // no normalized merchant name ends in a store/reference number
+    for (const p of payees) expect(/\d$/.test(p)).toBe(false)
   })
 })
 
 describe('forecast', () => {
-  it('projects aligned recurring + variable + total series', () => {
+  it('projects aligned series with flat variable averages (T-007 shape)', () => {
     const f = forecast(12)
     expect(f.months).toHaveLength(12)
     expect(f.recurring).toHaveLength(12)
     expect(f.total).toHaveLength(12)
     expect(f.recurring[0]!).toBeGreaterThan(0)
-    const variable0 = f.variable_by_category.reduce((s, c) => s + (c.totals[0] ?? 0), 0)
-    expect(f.total[0]!).toBeCloseTo(f.recurring[0]! + variable0, 1)
+    const variableMonthly = f.variable_by_category.reduce((s, c) => s + c.monthly_avg, 0)
+    for (let i = 0; i < 12; i++) expect(f.total[i]!).toBeCloseTo(f.recurring[i]! + variableMonthly, 1)
+  })
+
+  it('lumps annual charges in their anniversary month', () => {
+    const f = forecast(12)
+    const max = Math.max(...f.recurring)
+    const min = Math.min(...f.recurring)
+    // exactly the Prime renewal ($139) separates the anniversary month
+    expect(max - min).toBeCloseTo(139, 0)
+    expect(f.recurring.filter((v) => v === max)).toHaveLength(1)
+  })
+})
+
+describe('suggestCategories', () => {
+  it('returns one positional entry per payee, null when unmatched', () => {
+    const res = suggestCategories(['SQ *BLUE STAR DONUTS', 'ZZZ UNKNOWN VENDOR'])
+    expect(res.suggestions).toHaveLength(2)
+    expect(res.suggestions[0]).toMatchObject({ category: 'dining' })
+    expect(res.suggestions[1]).toMatchObject({ category: null, confidence: 0 })
   })
 })
 

@@ -38,6 +38,8 @@ export function AppShell() {
   const { theme, setTheme, setReduceMotion } = useTheme()
 
   // Live review-queue badge: transfer candidates + uncategorized imports.
+  // Attention economics (DESIGN.md, owner rule): the count clears itself as
+  // items are handled, and the display caps at 9+ — never an unbounded "400".
   const candidates = useTransferCandidates()
   const uncategorized = useUncategorized()
   const reviewCount = (candidates.data?.length ?? 0) + (uncategorized.data?.length ?? 0)
@@ -96,7 +98,7 @@ export function AppShell() {
                       className="num ml-auto rounded-full bg-accent-soft px-1.5 py-px text-[11px] font-semibold text-accent"
                       aria-label={`${reviewCount} items to review`}
                     >
-                      {reviewCount > 99 ? '99+' : reviewCount}
+                      {reviewCount > 9 ? '9+' : reviewCount}
                     </span>
                   ) : null}
                 </>

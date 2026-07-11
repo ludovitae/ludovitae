@@ -111,6 +111,13 @@ function median(xs: number[]): number {
   return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2
 }
 
+/** Population stdev — matches the backend's pstdev-based variability. */
+function pstdev(xs: number[]): number {
+  if (xs.length === 0) return 0
+  const mean = xs.reduce((s, v) => s + v, 0) / xs.length
+  return Math.sqrt(xs.reduce((s, v) => s + (v - mean) ** 2, 0) / xs.length)
+}
+
 /** Detection per contract: same normalized payee, ≥3 occurrences, regular
  * cadence (±5 days tolerance), price changes flagged, not disqualifying. */
 export function detectRecurring(): RecurringCharge[] {
@@ -137,6 +144,7 @@ export function detectRecurring(): RecurringCharge[] {
     const typical = round2(median(amounts))
     const last = sorted[sorted.length - 1]!
     const lastAmount = round2(-last.amount)
+    // raw rounded value, no zeroing threshold (T-007 reconciliation g)
     const changePct = typical > 0 ? Math.round(((lastAmount - typical) / typical) * 1000) / 10 : 0
     const monthlyEq =
       cadence === 'monthly' ? lastAmount : cadence === 'weekly' ? (lastAmount * 52) / 12 : lastAmount / 12
@@ -147,12 +155,15 @@ export function detectRecurring(): RecurringCharge[] {
       cadence,
       typical_amount: typical,
       last_amount: lastAmount,
-      price_change_pct: Math.abs(changePct) >= 1 ? changePct : 0,
+      price_change_pct: changePct,
       last_date: last.date,
       first_seen: sorted[0]!.date,
       occurrences: sorted.length,
       active: daysBetween(last.date, today) <= 1.5 * nominal,
       monthly_equivalent: round2(monthlyEq),
+      // stddev/median × 100, 1dp (ruling 2026-07-11)
+      amount_variability_pct:
+        typical > 0 ? Math.round((pstdev(amounts) / typical) * 1000) / 10 : 0,
     })
   }
   return out.sort((a, b) => b.monthly_equivalent - a.monthly_equivalent)
@@ -160,33 +171,46 @@ export function detectRecurring(): RecurringCharge[] {
 
 /* ------------------------------- hotspots --------------------------------- */
 
+/** Store-number normalization for merchant grouping (T-007 behavior):
+ * trailing digit-bearing tokens are store/reference codes, not identity. */
+function normalizeMerchant(payee: string): string {
+  const tokens = payee.trim().split(/\s+/)
+  while (tokens.length > 1 && /\d/.test(tokens[tokens.length - 1]!)) tokens.pop()
+  return tokens.join(' ')
+}
+
+/** T-007 reconciled windows: recent = last N FULL months (current partial
+ * month excluded), baseline = the N full months before. Spikes are
+ * increases-only (recent ≥ baseline + 20%, baseline ≥ $20/mo). */
 export function hotspots(monthsRaw: number): SpendingHotspots {
-  const months = Math.min(24, Math.max(2, Number.isFinite(monthsRaw) ? Math.round(monthsRaw) : 6))
-  const recentFrom = isoMonthsAgoFirst(2) // trailing 3 calendar months incl. current
-  const baseFrom = isoMonthsAgoFirst(2 + months)
+  const months = Math.min(24, Math.max(1, Number.isFinite(monthsRaw) ? Math.round(monthsRaw) : 6))
+  const currentFirst = isoMonthsAgoFirst(0) // current partial month excluded
+  const recentFrom = isoMonthsAgoFirst(months)
+  const baseFrom = isoMonthsAgoFirst(2 * months)
 
   const recent = new Map<string, number>()
   const baseline = new Map<string, number>()
   const merchants = new Map<string, { total: number; count: number }>()
 
   for (const t of outflows()) {
+    if (t.date >= currentFirst || t.date < baseFrom) continue
     const cat = t.category.trim() || 'uncategorized'
     if (t.date >= recentFrom) {
       recent.set(cat, (recent.get(cat) ?? 0) - t.amount)
-    } else if (t.date >= baseFrom) {
-      baseline.set(cat, (baseline.get(cat) ?? 0) - t.amount)
-    }
-    if (t.date >= baseFrom) {
-      const m = merchants.get(t.payee) ?? { total: 0, count: 0 }
+      // top merchants come from the recent window, normalized payees
+      const key = normalizeMerchant(t.payee)
+      const m = merchants.get(key) ?? { total: 0, count: 0 }
       m.total += -t.amount
       m.count += 1
-      merchants.set(t.payee, m)
+      merchants.set(key, m)
+    } else {
+      baseline.set(cat, (baseline.get(cat) ?? 0) - t.amount)
     }
   }
 
   const category_spikes = [...recent.entries()]
     .map(([category, total]) => {
-      const recentAvg = total / 3
+      const recentAvg = total / months
       const baseAvg = (baseline.get(category) ?? 0) / months
       return {
         category,
@@ -195,29 +219,28 @@ export function hotspots(monthsRaw: number): SpendingHotspots {
         delta_pct: baseAvg > 0 ? Math.round(((recentAvg - baseAvg) / baseAvg) * 1000) / 10 : 0,
       }
     })
-    .filter((s) => s.baseline_monthly_avg >= 25 && Math.abs(s.delta_pct) >= 10)
-    .sort((a, b) => Math.abs(b.delta_pct) - Math.abs(a.delta_pct))
+    // increases only: ≥ +20% over a ≥ $20/mo baseline
+    .filter((s) => s.baseline_monthly_avg >= 20 && s.delta_pct >= 20)
+    .sort((a, b) => b.delta_pct - a.delta_pct)
 
   const top_merchants = [...merchants.entries()]
     .map(([payee, { total, count }]) => ({
       payee,
-      monthly_avg: round2(total / (months + 3)),
+      monthly_avg: round2(total / months),
       txn_count: count,
     }))
     .sort((a, b) => b.monthly_avg - a.monthly_avg)
-    .slice(0, 8)
+    .slice(0, 10)
 
   const recurring = detectRecurring()
-  const price_increases = recurring.filter((r) => r.price_change_pct >= 5)
+  const price_increases = recurring.filter((r) => r.active && r.price_change_pct >= 5)
   const today = todayISO()
-  // Contract: active, low-variance, running ≥ 12 months. The mock adds a
-  // small-charge cap (≤ $100/mo) so fixed bills like the mortgage don't
-  // read as "forgotten" — flagged for T-007 alignment.
+  // Ruled 2026-07-11: active, variability ≤ 5%, running ≥ 365 days, and
+  // monthly_equivalent ≤ $100 (a mortgage is recurring, not forgettable).
   const possibly_forgotten = recurring.filter(
     (r) =>
       r.active &&
-      r.price_change_pct === 0 &&
-      Math.abs(r.last_amount - r.typical_amount) < 0.005 &&
+      r.amount_variability_pct <= 5 &&
       daysBetween(r.first_seen, today) >= 365 &&
       r.monthly_equivalent <= 100,
   )
@@ -239,32 +262,43 @@ export function forecast(monthsRaw: number): SpendingForecast {
   }
 
   const recurring = detectRecurring().filter((r) => r.active)
-  const recurringMonthly = round2(recurring.reduce((s, r) => s + r.monthly_equivalent, 0))
   const recurringPayees = new Set(recurring.map((r) => r.payee.trim().toLowerCase()))
 
-  // variable = trailing-6-month average of non-recurring outflows per category
-  const from = isoMonthsAgoFirst(5)
+  // T-007 pinned shape: weekly/monthly project at their monthly equivalent
+  // every month; ANNUAL charges lump in their anniversary month.
+  const steadyMonthly = recurring
+    .filter((r) => r.cadence !== 'annual')
+    .reduce((s, r) => s + r.monthly_equivalent, 0)
+  const recurringSeries = labels.map((label) => {
+    let v = steadyMonthly
+    for (const r of recurring) {
+      if (r.cadence === 'annual' && label.slice(5, 7) === r.last_date.slice(5, 7)) v += r.last_amount
+    }
+    return round2(v)
+  })
+
+  // variable = per-category average over a 6-FULL-month lookback (current
+  // partial month excluded), detected-recurring payees excluded.
+  const from = isoMonthsAgoFirst(6)
+  const to = isoMonthsAgoFirst(0)
   const byCat = new Map<string, number>()
   for (const t of outflows()) {
-    if (t.date < from) continue
+    if (t.date < from || t.date >= to) continue
     if (recurringPayees.has(t.payee.trim().toLowerCase())) continue
     const cat = t.category.trim() || 'uncategorized'
     byCat.set(cat, (byCat.get(cat) ?? 0) - t.amount)
   }
   const variable_by_category = [...byCat.entries()]
-    .map(([category, total]) => ({
-      category,
-      totals: labels.map(() => round2(total / 6)),
-    }))
-    .sort((a, b) => (b.totals[0] ?? 0) - (a.totals[0] ?? 0))
+    .map(([category, total]) => ({ category, monthly_avg: round2(total / 6) }))
+    .sort((a, b) => b.monthly_avg - a.monthly_avg)
 
-  const variableMonthly = round2(variable_by_category.reduce((s, c) => s + (c.totals[0] ?? 0), 0))
+  const variableMonthly = round2(variable_by_category.reduce((s, c) => s + c.monthly_avg, 0))
 
   return {
     months: labels,
-    recurring: labels.map(() => recurringMonthly),
+    recurring: recurringSeries,
     variable_by_category,
-    total: labels.map(() => round2(recurringMonthly + variableMonthly)),
+    total: recurringSeries.map((r) => round2(r + variableMonthly)),
   }
 }
 
@@ -295,15 +329,14 @@ const HEURISTICS: [RegExp, string, number][] = [
   [/gym|fitness|yoga|clinic|pharmacy/i, 'health', 0.68],
 ]
 
+/** One entry per requested payee — category null + confidence 0 when nothing
+ * matched, keeping the response positional (ruling 2026-07-11). */
 export function suggestCategories(payees: string[]) {
-  const suggestions: { payee: string; category: string; confidence: number }[] = []
+  const suggestions: { payee: string; category: string | null; confidence: number }[] = []
   for (const payee of payees) {
-    for (const [re, category, confidence] of HEURISTICS) {
-      if (re.test(payee)) {
-        suggestions.push({ payee, category, confidence })
-        break
-      }
-    }
+    const hit = HEURISTICS.find(([re]) => re.test(payee))
+    if (hit) suggestions.push({ payee, category: hit[1], confidence: hit[2] })
+    else suggestions.push({ payee, category: null, confidence: 0 })
   }
   return { suggestions, source: 'heuristic' as const }
 }

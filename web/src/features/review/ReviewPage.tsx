@@ -2,8 +2,8 @@
  *
  * 1. Transfer candidates — near-miss pairs the importer wouldn't auto-link;
  *    both legs side-by-side (account, date, amount), confirm or dismiss.
- *    Dismiss is CLIENT-SIDE only (session state): the contract has no
- *    dismiss endpoint — flagged in the task log for T-007.
+ *    Dismiss posts a persistent tombstone (ruling 2026-07-11) — the
+ *    candidate never resurfaces, across re-imports too.
  * 2. Uncategorized transactions — bulk select + categorize, heuristic
  *    suggestions as one-click chips, and a create-rule-from-payee shortcut
  *    (pre-filled modal). A compact rules card closes the loop. */
@@ -16,6 +16,7 @@ import {
   useCategorizeTransactions,
   useCreateRule,
   useDeleteRule,
+  useDismissCandidate,
   usePairTransfers,
   useRules,
   useSpending,
@@ -57,8 +58,9 @@ function TransferQueue() {
   const candidates = useTransferCandidates()
   const { data: accounts } = useAccounts()
   const pair = usePairTransfers()
-  // Dismissal is session-local: no contract endpoint exists (flagged for T-007).
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set())
+  // Dismissal is a real, persistent tombstone since the 2026-07-11 ruling —
+  // POST /transfers/candidates/dismiss; the candidate never resurfaces.
+  const dismiss = useDismissCandidate()
 
   const accountName = useMemo(() => {
     const map = new Map((accounts ?? []).map((a) => [a.id, a.name]))
@@ -67,9 +69,7 @@ function TransferQueue() {
 
   if (candidates.isPending) return <Skeleton className="h-48" />
 
-  const visible = (candidates.data ?? []).filter(
-    (c) => !dismissed.has(candidateKey(c)),
-  )
+  const visible = candidates.data ?? []
 
   return (
     <Card>
@@ -107,9 +107,8 @@ function TransferQueue() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() =>
-                      setDismissed((d) => new Set(d).add(candidateKey(c)))
-                    }
+                    disabled={dismiss.isPending}
+                    onClick={() => dismiss.mutate([[c.txns[0].id, c.txns[1].id]])}
                     aria-label={`Dismiss candidate ${c.txns[0].payee}`}
                   >
                     Dismiss
@@ -173,7 +172,8 @@ function UncategorizedQueue() {
   const knownCategories = useMemo(() => {
     const names = new Set<string>()
     for (const c of spending?.categories ?? []) names.add(c.name.toLowerCase())
-    for (const s of suggestions?.values() ?? []) names.add(s.category)
+    // suggest returns one entry per payee; unmatched carry category: null
+    for (const s of suggestions?.values() ?? []) if (s.category) names.add(s.category)
     return [...names].sort()
   }, [spending, suggestions])
 
@@ -312,10 +312,10 @@ function UncategorizedQueue() {
                         {formatMoney(t.amount, { cents: true })}
                       </td>
                       <td className="px-4 py-2">
-                        {sug ? (
+                        {sug?.category ? (
                           <button
                             type="button"
-                            onClick={() => categorize.mutate([[t.id], sug.category])}
+                            onClick={() => categorize.mutate([[t.id], sug.category!])}
                             title={`Apply "${sug.category}" (${Math.round(sug.confidence * 100)}% confident)`}
                             className="num rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent transition-colors duration-150 hover:bg-accent hover:text-accent-fg"
                           >

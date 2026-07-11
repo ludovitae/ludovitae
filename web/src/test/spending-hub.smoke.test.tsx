@@ -46,13 +46,18 @@ describe('spending hub (mock API)', () => {
     // forgotten hunters
     expect(screen.getAllByText('Apex Gym').length).toBeGreaterThan(0)
     expect(screen.getAllByText('CloudVault Storage').length).toBeGreaterThan(0)
-    // the price hike badge on Netflix
+    // the price hike badge keeps Netflix in the subscriptions section
     expect(screen.getByText('Netflix')).toBeTruthy()
     expect(screen.getByText('+16.1%')).toBeTruthy()
-    // lapsed group
+    // variability segmentation (ruling 2026-07-11): habits get their own group
+    expect(screen.getByText('Subscriptions & bills')).toBeTruthy()
+    expect(screen.getByText('Spending habits')).toBeTruthy()
+    expect(screen.getByText('Green Basket Farm Share')).toBeTruthy()
+    // lapsed group (section header + status chip)
     expect(screen.getByText('HBO Max')).toBeTruthy()
-    expect(screen.getByText('Lapsed')).toBeTruthy()
-    // stat row
+    expect(screen.getAllByText('Lapsed').length).toBeGreaterThan(0)
+    // stat row speaks about subscriptions, not raw recurring
+    expect(screen.getByText('Active subscriptions')).toBeTruthy()
     expect(screen.getByText('Monthly total')).toBeTruthy()
 
     // --- Hotspots ---
@@ -70,7 +75,8 @@ describe('spending hub (mock API)', () => {
       screen.getByRole('img', { name: 'Twelve-month spending forecast, recurring plus variable' }),
     ).toBeTruthy()
     // visible per-series stat line (the contrast-relief channel)
-    expect(screen.getByText(/\/mo recurring \+/)).toBeTruthy()
+    expect(screen.getByText(/\/mo recurring/)).toBeTruthy()
+    expect(screen.getByText(/anniversary month/)).toBeTruthy()
     expect(screen.getByText('Variable spending, by category')).toBeTruthy()
   }, 60000)
 })

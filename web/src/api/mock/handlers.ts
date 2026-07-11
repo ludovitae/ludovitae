@@ -583,7 +583,7 @@ async function route(
     const limit = Number(query?.limit ?? 200)
     return out.slice(0, limit)
   }
-  // v1.2 bulk categorize (source: manual; response body unspecified in contract)
+  // v1.2 bulk categorize (source: manual) → {updated} (ruling 2026-07-11)
   if (key === 'POST /transactions/categorize') {
     const req = body as unknown as { ids: number[]; category: string }
     let updated = 0
@@ -597,15 +597,16 @@ async function route(
     return { updated }
   }
 
-  /* ---- transfers (v1.2) ---- */
+  /* ---- transfers (v1.2, tombstone rulings 2026-07-11) ---- */
   if (key === 'GET /transfers/candidates') {
     const byId = new Map(db.transactions.map((t) => [t.id, t]))
     const out: TransferCandidate[] = []
     for (const c of db.transferCandidates) {
       const a = byId.get(c.txn_ids[0])
       const b = byId.get(c.txn_ids[1])
-      // pairing (or deleting) a leg retires the candidate
+      // pairing a leg or tombstoning (dismiss/unpair) retires the candidate
       if (!a || !b || a.transfer_pair_id !== null || b.transfer_pair_id !== null) continue
+      if (db.transferTombstones.has(db.tombstoneKey(a.id, b.id))) continue
       out.push({ score: c.score, txns: [a, b] })
     }
     return out.sort((a, b) => b.score - a.score)
@@ -615,9 +616,23 @@ async function route(
     const txns = req.transaction_ids.map(
       (id) => db.transactions.find((t) => t.id === id) ?? notFound('transaction'),
     )
+    if (txns.some((t) => t.transfer_pair_id !== null))
+      throw new ApiError(409, 'already_paired', 'A leg is already part of a transfer pair')
     const pairId = db.nextId.transferPair++
     for (const t of txns) t.transfer_pair_id = pairId
+    // manual pairing clears any tombstone for this pair
+    db.transferTombstones.delete(db.tombstoneKey(txns[0]!.id, txns[1]!.id))
     return txns
+  }
+  if (key === 'POST /transfers/candidates/dismiss') {
+    const req = body as unknown as { transaction_ids: [number, number] }
+    const txns = req.transaction_ids.map(
+      (id) => db.transactions.find((t) => t.id === id) ?? notFound('transaction'),
+    )
+    if (txns.some((t) => t.transfer_pair_id !== null))
+      throw new ApiError(409, 'already_paired', 'A leg is already part of a transfer pair')
+    db.transferTombstones.add(db.tombstoneKey(txns[0]!.id, txns[1]!.id))
+    return undefined // 204 — persistent, the candidate never resurfaces
   }
   m = /^\/transfers\/pair\/(\d+)$/.exec(path)
   if (m && method === 'DELETE') {
@@ -625,6 +640,8 @@ async function route(
     const legs = db.transactions.filter((t) => t.transfer_pair_id === pairId)
     if (legs.length === 0) notFound('transfer pair')
     for (const t of legs) t.transfer_pair_id = null
+    // unlink AND tombstone: never auto-paired again (manual re-pair allowed)
+    if (legs.length === 2) db.transferTombstones.add(db.tombstoneKey(legs[0]!.id, legs[1]!.id))
     return undefined
   }
 

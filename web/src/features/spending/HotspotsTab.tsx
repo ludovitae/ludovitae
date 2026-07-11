@@ -53,11 +53,11 @@ export function HotspotsTab() {
         <Card>
           <CardHeader
             title="Category spikes"
-            hint="Last 3 months against the 6-month baseline before them"
+            hint="Last 6 full months vs the 6 before — increases of 20%+ only"
           />
           {data.category_spikes.length === 0 ? (
             <p className="px-5 pt-1 pb-5 text-[13px] text-ink-3">
-              Nothing unusual — every category is tracking its baseline.
+              Nothing running ahead of its baseline.
             </p>
           ) : (
             <ul className="divide-y divide-(--border) px-5 pt-1 pb-4">
@@ -126,7 +126,7 @@ export function HotspotsTab() {
       </div>
 
       <Card>
-        <CardHeader title="Top merchants" hint="Monthly average over the window, transfers excluded" />
+        <CardHeader title="Top merchants" hint="Monthly average, last 6 full months — store numbers folded, transfers excluded" />
         {data.top_merchants.length === 0 ? (
           <p className="px-5 pt-1 pb-5 text-[13px] text-ink-3">No merchant activity in the window.</p>
         ) : (
