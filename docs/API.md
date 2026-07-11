@@ -336,6 +336,99 @@ else is still a hard `parse_error`, and a row **with** a valid date always
 fails closed on any amount problem (oversized, garbage, missing) — never
 skipped.
 
+### Import account matching & creation (v1.2.2, #26 — coordinator-ruled)
+
+Accounts gain a stored **hashed external-account link**: nullable
+`external_account_id` = sha256 of the raw provider account id (OFX `ACCTID`
+or a CSV account-number cell) — the raw id is never stored. Set on import
+commit for the target account (upsert; last-write-wins — a collision moves
+the link and logs a server warning). Not exposed on the Account resource.
+Migration 0007.
+
+`POST /import/preview`: `account_id` becomes **optional** (the create-new
+flow has no account yet); when absent the CSV `sign_hint` is `null`.
+
+OFX preview response gains:
+
+- `account_match: {"account_id": int | null, "acctid_masked": "···1234" | null}`
+  — matched by the hashed first `ACCTID`; unknown id → `account_id` null;
+  no `ACCTID` in the file → both null.
+
+CSV preview response gains:
+
+- `account_groups: null | [{key, number_masked, name, rows, account_id}]` —
+  present when the **effective mapping** (matched preset, else suggestion)
+  carries `account_id_column`: one entry per distinct account-number value,
+  in file order. `key` is the sha256 of the raw number (the handle commit's
+  `account_map` is keyed by — the raw number never round-trips),
+  `name` comes from `account_column` (null without one), `account_id` is the
+  hashed-id match (null when unseen).
+- optional multipart `mapping` field: overrides the effective mapping used
+  for `sign_hint`/`account_groups` (the wizard re-previews after remapping).
+
+CSV `mapping` gains optional `account_column` (display names) and
+`account_id_column` (routing identity — required if `account_column` is
+set). Suggested when an account-ish header's values repeat across rows with
+distinct count > 1. When `account_id_column` is present the commit routes
+rows **per account** (multi-account mode).
+
+`POST /import/commit` accepts **either** `account_id` **or** `new_account`
+(multipart JSON: `{name, type, institution?, asset_class?, member_id?}`) —
+exactly one, else 422. `new_account` creates the account (type-appropriate
+freshness defaults), links the external id (OFX), and the response carries
+the full Account resource: `{imported, skipped_duplicates, account: {...}}`
+(`account` only when created). Validation errors use the envelope.
+
+Multi-account mode (CSV with `account_id_column`): `account_id`/`new_account`
+must be absent (422). Optional multipart JSON `account_map` keyed by group
+`key`: `{"<key>": {"account_id": n} | {"new_account": {...}}}`. Resolution
+per group: explicit entry → hashed-id match → else 422 `unknown_account`
+(masked numbers listed). Created accounts are linked (`external_account_id`
+= group key). Response: `{imported, skipped_duplicates, accounts:
+[{account_id, name, created, imported, skipped_duplicates}]}`.
+
+Import presets gain `last_account_id: int | null` (also on preview's
+`matched_preset`; null when the account no longer exists): single-target CSV
+commits that save or match a preset record the target account as the
+wizard's picker default. A built-in preset **"Fidelity — Accounts History"**
+ships via migration 0007 (multi-account mapping for Fidelity's
+`Accounts_History.csv` header shape).
+
+CSV parsing hardening (#26): leading non-CSV/blank preamble lines before the
+header are skipped (header = first row with ≥ 2 non-empty cells); the
+trailing date-less block tolerance handles footers of any length (dated rows
+with bad amounts still fail closed); quoted empty strings and quoted
+negative amounts parse; a column named exactly `Action` is preferred for
+`payee` (falls back to `Description`).
+
+**Investment semantics (coordinator ruling):** transactions imported into
+investment-type accounts (`brokerage|retirement|hsa`) are auto-categorized
+`investment-activity` (source `heuristic`, overriding file/rules) and are
+**excluded from all spending analytics** — same exclusion family as
+transfer pairs and the `transfer` category fallback (a −0.51 dividend
+reinvestment is not spending).
+
+### Admin reset (v1.2.2, #27 — coordinator-ruled)
+
+`POST /admin/reset` `{mode: "demo" | "empty", confirm: string}` — auth +
+CSRF. `confirm` must exactly equal `"reset ludovitae"`, else 422
+`confirm_required`; bad mode → 422 `validation_error`.
+
+Takes a backup FIRST via the backup module (`pre-reset-<utc-ts>.db`, same
+rotation family as pre-migration, keep 5; no-op → `null` when the DB file is
+absent/empty), then wipes all financial tables — accounts, balance
+snapshots, transactions, transfer tombstones, flows, goals, scenarios, sim
+cache, spending categories, import presets, category rules, household (reset
+to a single fresh "You" self member with null retirement/SS fields), profile
+to defaults — while **preserving** `auth_credential`, `auth_sessions`,
+`settings`, `ai_settings`, `ai_usage`. `mode: "demo"` then runs the demo
+seeder in-process. Response: `{"backup": "<filename>" | null, "mode": ...}`.
+
+Web: Settings → Danger zone (restrained until expanded; typed-phrase confirm
+modal; full query invalidation + navigate to dashboard on success).
+First-run: after password setup, an interstitial offers "Explore with demo
+data" (reset mode=demo) vs "Start empty" (proceeds).
+
 ## Scenarios
 
 `GET/POST /scenarios`, `GET/PATCH/DELETE /scenarios/{id}`
