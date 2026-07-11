@@ -1,44 +1,59 @@
-/** In-memory demo household for VITE_MOCK=1. Age 46, ~$812k net worth.
- * State resets on reload; auth state persists in localStorage. */
+/** In-memory demo household for VITE_MOCK=1. Three members (46 / 43 / 14),
+ * ~$908k net worth. State resets on reload; auth persists in localStorage. */
 
 import type {
   Account,
   BalanceSnapshot,
   Flow,
   Goal,
+  HouseholdMember,
   Profile,
   Scenario,
   Settings,
+  SpendingProfile,
   Transaction,
 } from '../types'
 import { LIABILITY_TYPES } from '../types'
 import { mulberry32, gaussian } from './rng'
 import { todayISO } from '@/lib/format'
 
+/** v1.1 slim profile — person-level fields live on household members. */
 export const profile: Profile = {
-  birth_year: 1980,
-  retirement_age: 65,
-  life_expectancy: 92,
   annual_retirement_spending: 80000,
-  social_security_monthly: 2200,
-  social_security_start_age: 67,
   inflation_pct: 2.5,
   effective_tax_rate_pct: 18,
 }
 
+export const household: HouseholdMember[] = [
+  {
+    id: 1, name: 'Brian', role: 'self', birth_year: 1980, life_expectancy: 92,
+    retirement_age: 65, ss_monthly_at_fra: 2200, ss_claim_age: 67, notes: '',
+  },
+  {
+    id: 2, name: 'Dana', role: 'partner', birth_year: 1983, life_expectancy: 94,
+    retirement_age: 67, ss_monthly_at_fra: 1600, ss_claim_age: 67, notes: '',
+  },
+  {
+    id: 3, name: 'Wren', role: 'child', birth_year: 2012, life_expectancy: 95,
+    retirement_age: null, ss_monthly_at_fra: null, ss_claim_age: null,
+    notes: 'college fund lives under Goals',
+  },
+]
+
 const today = todayISO()
 
 export const accounts: Account[] = [
-  acc(1, 'Everyday Checking', 'checking', 'First Tech CU', 12400, null, 'cash'),
-  acc(2, 'High-Yield Savings', 'savings', 'Ally', 42000, null, 'cash'),
-  acc(3, 'Vanguard Brokerage', 'brokerage', 'Vanguard', 178000, null, 'stocks'),
-  acc(4, '401(k)', 'retirement', 'Fidelity', 295000, null, 'mixed'),
-  acc(5, 'Roth IRA', 'retirement', 'Vanguard', 88000, null, 'stocks'),
-  acc(6, 'HSA', 'hsa', 'Fidelity', 24500, null, 'stocks'),
-  acc(7, 'House', 'property', '—', 480000, 3.0, null, 'Zestimate, sanity-checked'),
-  acc(8, 'Subaru Outback', 'vehicle', '—', 14000, -8.0, null),
-  acc(9, 'Mortgage', 'mortgage', 'Rocket', 315000, null, null, '2.9% 30yr, 2021'),
-  acc(10, 'Car Loan', 'loan', 'First Tech CU', 6500, null, null),
+  acc(1, 'Everyday Checking', 'checking', 'First Tech CU', 12400, null, 'cash', null),
+  acc(2, 'High-Yield Savings', 'savings', 'Ally', 42000, null, 'cash', null),
+  acc(3, 'Vanguard Brokerage', 'brokerage', 'Vanguard', 178000, null, 'stocks', null),
+  acc(4, '401(k)', 'retirement', 'Fidelity', 295000, null, 'mixed', 1),
+  acc(5, 'Roth IRA', 'retirement', 'Vanguard', 88000, null, 'stocks', 1),
+  acc(6, 'HSA', 'hsa', 'Fidelity', 24500, null, 'stocks', 2),
+  acc(7, 'House', 'property', '—', 480000, 3.0, null, null, 'Zestimate, sanity-checked'),
+  acc(8, 'Subaru Outback', 'vehicle', '—', 14000, -8.0, null, null),
+  acc(9, 'Mortgage', 'mortgage', 'Rocket', 315000, null, null, null, '2.9% 30yr, 2021'),
+  acc(10, 'Car Loan', 'loan', 'First Tech CU', 6500, null, null, null),
+  acc(11, '403(b)', 'retirement', 'TIAA', 96000, null, 'mixed', 2),
 ]
 
 function acc(
@@ -49,6 +64,7 @@ function acc(
   balance: number,
   growth: number | null,
   assetClass: Account['asset_class'],
+  memberId: number | null,
   notes = '',
 ): Account {
   return {
@@ -59,6 +75,7 @@ function acc(
     balance,
     growth_rate_pct: growth,
     asset_class: assetClass,
+    member_id: memberId,
     include_in_net_worth: true,
     notes,
     created_at: today,
@@ -66,14 +83,15 @@ function acc(
 }
 
 export const flows: Flow[] = [
-  flow(1, 'Salary — Brian', 'income', 9800, 3.0, 'salary'),
-  flow(2, 'Salary — Dana', 'income', 6200, 3.0, 'salary'),
-  flow(3, 'Living expenses', 'expense', 6800, 0, 'living'),
-  { ...flow(4, 'Mortgage payment', 'expense', 2350, 0, 'housing'), end_date: '2041-08-01', ends_at_retirement: false },
-  { ...flow(5, '401(k) contributions', 'contribution', 1800, 0, 'retirement'), account_id: 4 },
-  { ...flow(6, 'Roth IRA', 'contribution', 580, 0, 'retirement'), account_id: 5 },
-  { ...flow(7, 'HSA', 'contribution', 350, 0, 'health'), account_id: 6 },
-  { ...flow(8, 'Brokerage auto-invest', 'contribution', 1000, 0, 'investing'), account_id: 3 },
+  flow(1, 'Salary — Brian', 'income', 9800, 3.0, 'salary', 1),
+  flow(2, 'Salary — Dana', 'income', 6200, 3.0, 'salary', 2),
+  // Everyday spending lives in the v1.1 spending categories; the mortgage
+  // stays a flow (fixed payment with an end date, not an inflating category).
+  { ...flow(3, 'Mortgage payment', 'expense', 2350, 0, 'housing', null), end_date: '2041-08-01', ends_at_retirement: false },
+  { ...flow(5, '401(k) contributions', 'contribution', 1800, 0, 'retirement', 1), account_id: 4 },
+  { ...flow(6, 'Roth IRA', 'contribution', 580, 0, 'retirement', 1), account_id: 5 },
+  { ...flow(7, 'HSA', 'contribution', 350, 0, 'health', 2), account_id: 6 },
+  { ...flow(8, 'Brokerage auto-invest', 'contribution', 1000, 0, 'investing', null), account_id: 3 },
 ]
 
 function flow(
@@ -83,6 +101,7 @@ function flow(
   monthly: number,
   growth: number,
   category: string,
+  memberId: number | null,
 ): Flow {
   return {
     id,
@@ -94,8 +113,25 @@ function flow(
     end_date: null,
     account_id: null,
     category,
+    member_id: memberId,
     ends_at_retirement: kind !== 'expense',
   }
+}
+
+export const spendingProfile: SpendingProfile = {
+  categories: [
+    { id: 1, name: 'Groceries', monthly_amount: 950, kind: 'essential', annual_growth_pct: null },
+    { id: 2, name: 'Utilities', monthly_amount: 320, kind: 'essential', annual_growth_pct: null },
+    { id: 3, name: 'Insurance', monthly_amount: 380, kind: 'essential', annual_growth_pct: null },
+    { id: 4, name: 'Transportation', monthly_amount: 420, kind: 'essential', annual_growth_pct: null },
+    { id: 5, name: 'Healthcare', monthly_amount: 350, kind: 'essential', annual_growth_pct: 5 },
+    { id: 6, name: 'Kids & school', monthly_amount: 600, kind: 'essential', annual_growth_pct: null },
+    { id: 7, name: 'Dining out', monthly_amount: 520, kind: 'discretionary', annual_growth_pct: null },
+    { id: 8, name: 'Travel', monthly_amount: 500, kind: 'discretionary', annual_growth_pct: null },
+    { id: 9, name: 'Subscriptions', monthly_amount: 85, kind: 'discretionary', annual_growth_pct: null },
+    { id: 10, name: 'Everything else', monthly_amount: 900, kind: 'discretionary', annual_growth_pct: null },
+  ],
+  monthly_savings_target: 1500,
 }
 
 export const goals: Goal[] = [
@@ -199,12 +235,14 @@ const PAYEES: [string, string, number, number][] = [
   ['Spotify', 'subscriptions', -11.99, 1],
 ]
 
+// 24 months of history so the 3/6/12/24-month observed windows all have data.
 export const transactions: Transaction[] = (() => {
   const rng = mulberry32(20260710)
   const out: Transaction[] = []
   let id = 1
-  for (let m = 3; m >= 0; m--) {
+  for (let m = 23; m >= 0; m--) {
     const base = new Date()
+    base.setDate(1)
     base.setMonth(base.getMonth() - m)
     const y = base.getFullYear()
     const mo = base.getMonth() + 1
@@ -237,9 +275,11 @@ export const transactions: Transaction[] = (() => {
 /* ----------------------------- id counters ------------------------------ */
 
 export const nextId = {
-  account: 11,
+  account: 12,
   flow: 9,
   goal: 5,
+  member: 4,
   scenario: 3,
+  spendingCategory: 11,
   transaction: transactions.length + 1,
 }

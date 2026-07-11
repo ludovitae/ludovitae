@@ -230,6 +230,7 @@ function AddAccountModal({ onClose }: { onClose: () => void }) {
     balance: 0,
     growth_rate_pct: null,
     asset_class: 'cash',
+    member_id: null,
     include_in_net_worth: true,
     notes: '',
   })

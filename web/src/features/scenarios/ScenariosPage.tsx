@@ -6,6 +6,7 @@ import {
   useCompare,
   useCreateScenario,
   useDeleteScenario,
+  useHousehold,
   usePatchScenario,
   useProfile,
   useScenarios,
@@ -39,6 +40,8 @@ const CHART_SLOTS = [
 export function ScenariosPage() {
   const { data: scenarios, isPending: scenariosPending } = useScenarios()
   const { data: profile } = useProfile()
+  const { data: household } = useHousehold()
+  const self = household?.find((m) => m.role === 'self')
 
   const [activeId, setActiveId] = useState(0)
   const [draft, setDraft] = useState<ScenarioParams>({})
@@ -68,7 +71,7 @@ export function ScenariosPage() {
   const compare = useCompare(compareIds, pinned.length >= 2)
   const comparing = pinned.length >= 2
 
-  if (scenariosPending || !profile || !active) {
+  if (scenariosPending || !profile || !active || !self) {
     return (
       <>
         <PageHeader title="Scenario studio" />
@@ -81,7 +84,7 @@ export function ScenariosPage() {
   }
 
   const dirty = !paramsEqual(draft, active.params)
-  const retirementAge = draft.retirement_age ?? profile.retirement_age
+  const retirementAge = draft.retirement_age ?? self.retirement_age ?? 65
   const spending = draft.annual_retirement_spending ?? profile.annual_retirement_spending
   const savingsDelta = draft.monthly_savings_delta ?? 0
 
@@ -159,7 +162,7 @@ export function ScenariosPage() {
 
             <EventChips
               events={draft.events ?? []}
-              currentAge={new Date().getFullYear() - profile.birth_year}
+              currentAge={new Date().getFullYear() - self.birth_year}
               retirementAge={retirementAge}
               onChange={(events) => setDraft({ ...draft, events })}
             />
@@ -187,7 +190,7 @@ export function ScenariosPage() {
               showBands={compareBands}
               onToggleBands={setCompareBands}
               onUnpin={togglePin}
-              profileRetirement={profile.retirement_age}
+              profileRetirement={self.retirement_age ?? 65}
             />
           ) : (
             <SingleView

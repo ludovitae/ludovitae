@@ -5,8 +5,8 @@ import {
   useDashboard,
   useDeleteGoal,
   useGoals,
+  useHousehold,
   usePatchGoal,
-  useProfile,
   useSimulation,
 } from '@/api/queries'
 import type { Goal, GoalCreate } from '@/api/types'
@@ -23,9 +23,10 @@ import { PageHeader } from '@/layout/AppShell'
 export function GoalsPage() {
   const { data: goals, isPending } = useGoals()
   const { data: dashboard } = useDashboard()
-  const { data: profile } = useProfile()
+  const { data: household } = useHousehold()
+  const self = household?.find((m) => m.role === 'self')
   // Baseline simulation feeds date feasibility.
-  const sim = useSimulation({}, { enabled: !!profile })
+  const sim = useSimulation({}, { enabled: !!household })
   const [editing, setEditing] = useState<Goal | 'new' | null>(null)
 
   const sorted = useMemo(
@@ -71,7 +72,7 @@ export function GoalsPage() {
               key={g.id}
               goal={g}
               monthlySurplus={dashboard?.monthly_surplus ?? null}
-              simP50AtDate={p50AtDate(sim.data, profile?.birth_year, g.target_date)}
+              simP50AtDate={p50AtDate(sim.data, self?.birth_year, g.target_date)}
               onEdit={() => setEditing(g)}
             />
           ))}

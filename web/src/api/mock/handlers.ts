@@ -10,11 +10,15 @@ import type {
   DashboardData,
   Flow,
   Goal,
+  HouseholdMember,
   ImportPreview,
+  ObservedSpending,
   Scenario,
   ScenarioParams,
   SessionInfo,
   SimulateRequest,
+  SpendingCategory,
+  SpendingProfileInput,
 } from '../types'
 import { LIABILITY_TYPES } from '../types'
 import * as db from './db'
@@ -40,6 +44,11 @@ function notFound(what: string): never {
   throw new ApiError(404, 'not_found', `${what} not found`)
 }
 
+function validateClaimAge(age: number | null | undefined) {
+  if (age != null && (age < 62 || age > 70))
+    throw new ApiError(400, 'invalid_claim_age', 'ss_claim_age must be between 62 and 70')
+}
+
 function baselineScenario(): Scenario {
   return { id: 0, name: 'Current trajectory', description: 'Your plan as entered — no changes.', is_baseline: true, params: {} }
 }
@@ -47,8 +56,10 @@ function baselineScenario(): Scenario {
 function simulate(params: ScenarioParams, nPaths: number, seed: number) {
   return runMockSim({
     profile: db.profile,
+    household: db.household,
     accounts: db.accounts,
     flows: db.flows,
+    spending: db.spendingProfile,
     params,
     nPaths: Math.min(Math.max(nPaths, 100), 2000),
     seed,
@@ -76,6 +87,8 @@ function dashboard(): DashboardData {
     if (f.kind === 'income') income += f.amount_monthly
     else outgo += f.amount_monthly
   }
+  // v1.1: spending categories count as outgo alongside expense flows.
+  for (const c of db.spendingProfile.categories) outgo += c.monthly_amount
   return {
     net_worth: assets - liabilities,
     assets,
@@ -93,6 +106,44 @@ function dashboard(): DashboardData {
       pct_funded: g.target_amount ? Math.round((1000 * g.funded_amount) / g.target_amount) / 10 : 0,
     })),
     monthly_surplus: Math.round((income - outgo) * 100) / 100,
+  }
+}
+
+/* --------------------------- observed spending --------------------------- */
+
+/** Trailing-N-months outflow averages from imported transactions, grouped by
+ * category (uncategorized → "uncategorized"). Computed on demand, never stored. */
+function observedSpending(monthsRaw: number): ObservedSpending {
+  const months = Math.min(60, Math.max(1, Number.isFinite(monthsRaw) ? Math.round(monthsRaw) : 12))
+  const cutoff = new Date()
+  cutoff.setDate(1)
+  cutoff.setMonth(cutoff.getMonth() - months)
+  const from = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-01`
+  const to = todayISO()
+
+  const sums = new Map<string, { total: number; count: number }>()
+  for (const t of db.transactions) {
+    if (t.amount >= 0 || t.date < from || t.date > to) continue
+    const key = t.category.trim() || 'uncategorized'
+    const cur = sums.get(key) ?? { total: 0, count: 0 }
+    cur.total += -t.amount
+    cur.count += 1
+    sums.set(key, cur)
+  }
+  const by_category = [...sums.entries()]
+    .map(([category, { total, count }]) => ({
+      category,
+      monthly_avg: Math.round((total / months) * 100) / 100,
+      txn_count: count,
+    }))
+    .sort((a, b) => b.monthly_avg - a.monthly_avg)
+  const total = by_category.reduce((s, c) => s + c.monthly_avg, 0)
+  return {
+    months,
+    from,
+    to,
+    total_monthly_avg: Math.round(total * 100) / 100,
+    by_category,
   }
 }
 
@@ -296,6 +347,70 @@ async function route(
   if (key === 'GET /profile') return db.profile
   if (key === 'PUT /profile') return Object.assign(db.profile, body)
 
+  /* ---- household (v1.1) ---- */
+  if (key === 'GET /household') return db.household
+  if (key === 'POST /household') {
+    const m: HouseholdMember = {
+      id: db.nextId.member++,
+      name: '',
+      role: 'other',
+      birth_year: 1990,
+      life_expectancy: 90,
+      retirement_age: null,
+      ss_monthly_at_fra: null,
+      ss_claim_age: null,
+      notes: '',
+      ...(body as object),
+    }
+    if (m.role === 'self' && db.household.some((x) => x.role === 'self'))
+      throw new ApiError(400, 'exactly_one_self', 'Exactly one self member must exist')
+    validateClaimAge(m.ss_claim_age)
+    db.household.push(m)
+    return m
+  }
+  let m = /^\/household\/(\d+)$/.exec(path)
+  if (m) {
+    const member = db.household.find((x) => x.id === Number(m![1])) ?? notFound('household member')
+    if (method === 'GET') return member
+    if (method === 'PATCH') {
+      const patch = body as Partial<HouseholdMember>
+      if (patch.role !== undefined && patch.role !== member.role) {
+        if (member.role === 'self')
+          throw new ApiError(400, 'exactly_one_self', 'The self member must keep the self role')
+        if (patch.role === 'self')
+          throw new ApiError(400, 'exactly_one_self', 'Exactly one self member must exist')
+      }
+      if (patch.ss_claim_age !== undefined) validateClaimAge(patch.ss_claim_age)
+      return Object.assign(member, patch)
+    }
+    if (method === 'DELETE') {
+      if (member.role === 'self')
+        throw new ApiError(400, 'exactly_one_self', 'The self member cannot be deleted')
+      db.household.splice(db.household.indexOf(member), 1)
+      // Orphaned ownership falls back to household/shared.
+      for (const a of db.accounts) if (a.member_id === member.id) a.member_id = null
+      for (const f of db.flows) if (f.member_id === member.id) f.member_id = null
+      return undefined
+    }
+  }
+
+  /* ---- spending (v1.1) ---- */
+  if (key === 'GET /spending') return db.spendingProfile
+  if (key === 'PUT /spending') {
+    const input = body as unknown as SpendingProfileInput
+    const categories: SpendingCategory[] = (input.categories ?? []).map((c) => ({
+      id: c.id && c.id > 0 ? c.id : db.nextId.spendingCategory++,
+      name: c.name,
+      monthly_amount: c.monthly_amount,
+      kind: c.kind,
+      annual_growth_pct: c.annual_growth_pct ?? null,
+    }))
+    db.spendingProfile.categories = categories
+    db.spendingProfile.monthly_savings_target = input.monthly_savings_target ?? 0
+    return db.spendingProfile
+  }
+  if (key === 'GET /spending/observed') return observedSpending(Number(query?.months ?? 12))
+
   /* ---- accounts ---- */
   if (key === 'GET /accounts') return db.accounts
   if (key === 'POST /accounts') {
@@ -307,6 +422,7 @@ async function route(
       balance: 0,
       growth_rate_pct: null,
       asset_class: null,
+      member_id: null,
       include_in_net_worth: true,
       notes: '',
       created_at: todayISO(),
@@ -316,7 +432,7 @@ async function route(
     db.balances.set(a.id, [{ date: todayISO(), amount: a.balance }])
     return a
   }
-  let m = /^\/accounts\/(\d+)$/.exec(path)
+  m = /^\/accounts\/(\d+)$/.exec(path)
   if (m) {
     const acct = db.accounts.find((a) => a.id === Number(m![1])) ?? notFound('account')
     if (method === 'GET') return acct
@@ -362,7 +478,7 @@ async function route(
   /* ---- flows ---- */
   if (key === 'GET /flows') return db.flows
   if (key === 'POST /flows') {
-    const f = { id: db.nextId.flow++, ...(body as object) } as Flow
+    const f = { id: db.nextId.flow++, member_id: null, ...(body as object) } as Flow
     db.flows.push(f)
     return f
   }
