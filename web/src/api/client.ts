@@ -17,8 +17,12 @@ import type {
   Goal,
   GoalCreate,
   GoalPatch,
+  HouseholdMember,
+  HouseholdMemberCreate,
+  HouseholdMemberPatch,
   ImportCommitResult,
   ImportPreview,
+  ObservedSpending,
   Profile,
   Scenario,
   ScenarioCreate,
@@ -27,6 +31,8 @@ import type {
   Settings,
   SimResult,
   SimulateRequest,
+  SpendingProfile,
+  SpendingProfileInput,
   Transaction,
 } from './types'
 
@@ -128,6 +134,22 @@ export const api = {
   profile: {
     get: () => request<Profile>('GET', '/profile'),
     update: (p: Profile) => request<Profile>('PUT', '/profile', { json: p }),
+  },
+
+  household: {
+    list: () => request<HouseholdMember[]>('GET', '/household'),
+    get: (id: number) => request<HouseholdMember>('GET', `/household/${id}`),
+    create: (m: HouseholdMemberCreate) => request<HouseholdMember>('POST', '/household', { json: m }),
+    patch: (id: number, m: HouseholdMemberPatch) =>
+      request<HouseholdMember>('PATCH', `/household/${id}`, { json: m }),
+    remove: (id: number) => request<void>('DELETE', `/household/${id}`),
+  },
+
+  spending: {
+    get: () => request<SpendingProfile>('GET', '/spending'),
+    update: (s: SpendingProfileInput) => request<SpendingProfile>('PUT', '/spending', { json: s }),
+    observed: (months: number) =>
+      request<ObservedSpending>('GET', '/spending/observed', { query: { months } }),
   },
 
   accounts: {

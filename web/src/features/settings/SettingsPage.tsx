@@ -175,25 +175,13 @@ function ProfileCard() {
 
   return (
     <Card>
-      <CardHeader title="Plan profile" hint="Feeds every simulation — the baseline is built from these" />
+      <CardHeader
+        title="Plan profile"
+        hint="Household-level assumptions — birthdays, retirement ages, and Social Security live on the Household page"
+      />
       <form onSubmit={submit} className="grid grid-cols-2 gap-4 px-5 pt-2 pb-5 md:grid-cols-3">
-        <Field label="Birth year">
-          {(id) => <TextInput id={id} inputMode="numeric" className="num" value={String(form.birth_year)} onChange={num('birth_year')} />}
-        </Field>
-        <Field label="Retirement age">
-          {(id) => <TextInput id={id} inputMode="numeric" className="num" value={String(form.retirement_age)} onChange={num('retirement_age')} />}
-        </Field>
-        <Field label="Plan to age">
-          {(id) => <TextInput id={id} inputMode="numeric" className="num" value={String(form.life_expectancy)} onChange={num('life_expectancy')} />}
-        </Field>
-        <Field label="Retirement spending / yr">
+        <Field label="Retirement spending / yr" hint="Takes over when the last earner retires">
           {(id) => <TextInput id={id} inputMode="decimal" className="num" value={String(form.annual_retirement_spending)} onChange={num('annual_retirement_spending')} />}
-        </Field>
-        <Field label="Social Security / mo">
-          {(id) => <TextInput id={id} inputMode="decimal" className="num" value={String(form.social_security_monthly)} onChange={num('social_security_monthly')} />}
-        </Field>
-        <Field label="SS starts at age">
-          {(id) => <TextInput id={id} inputMode="numeric" className="num" value={String(form.social_security_start_age)} onChange={num('social_security_start_age')} />}
         </Field>
         <Field label="Inflation %">
           {(id) => <TextInput id={id} inputMode="decimal" className="num" value={String(form.inflation_pct)} onChange={num('inflation_pct')} />}
@@ -201,7 +189,7 @@ function ProfileCard() {
         <Field label="Effective tax rate %">
           {(id) => <TextInput id={id} inputMode="decimal" className="num" value={String(form.effective_tax_rate_pct)} onChange={num('effective_tax_rate_pct')} />}
         </Field>
-        <div className="col-span-2 flex items-end justify-end gap-2 md:col-span-1">
+        <div className="col-span-2 flex items-end justify-end gap-2 md:col-span-3">
           {savedTick ? (
             <span className="inline-flex items-center gap-1 pb-2 text-xs font-medium text-positive">
               <IconCheck width={14} height={14} /> Saved

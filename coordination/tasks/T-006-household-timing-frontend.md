@@ -1,6 +1,6 @@
 # T-006 — Household, spending & milestone UI (frontend)
 
-Owner: frontend-dev agent · Branch: `ws/household-fe` · Status: todo
+Owner: frontend-dev agent · Branch: `ws/household-fe` · Status: review
 
 ## Scope
 
@@ -50,3 +50,49 @@ mock layer to the new contract first and develop against `VITE_MOCK=1`.
 
 - 2026-07-10 (coordinator): task created. Contract is binding; flag concerns
   here rather than diverging.
+- 2026-07-11 (frontend-dev): complete on `ws/household-fe` (7 commits), status
+  → review. build/lint/`vitest run` green — 97 tests (was 62). Decisions:
+  - **Nav order** (my call, as delegated): Dashboard, Household, Accounts,
+    Spending, Scenarios, Goals, Import, Settings — inputs ordered as "who's in
+    the plan → what they own → what life costs", then the what-ifs. New
+    two-person and wallet icons in the house stroke style.
+  - **Milestone markers**: engine milestones only (never derived in UI, per
+    ADR). Hairline + chip (kind icon + member first name), row-staggered via a
+    pure `layoutMarkers` transform (unit-tested), right-edge flip, positions
+    tweened per `member:kind` identity (reduced motion snaps), full label on
+    probe tooltip + SVG `<title>` hover + `aria-label`. Colors are new
+    `:root` tokens `--ms-retirement #d55181 / --ms-ss #149bb4 / --ms-rmd
+    #c98500` — identical across themes/modes, validated with the dataviz
+    six-checks script against BOTH chart surfaces alongside the series blues
+    (worst adjacent CVD ΔE 16.4; the initial chart-5 purple failed protan
+    ΔE 2.5 vs series blue and was rejected).
+  - **Compare mode**: markers for ONE scenario — the active one if pinned,
+    else the first pinned — named in the card hint. Dimmed variants for every
+    pinned set were rejected: with up to 6 pinned scenarios the chip rows turn
+    to noise.
+  - **Self retirement sugar**: studio writes `member_overrides`; scenarios
+    that already carry top-level `retirement_age` (v1 sugar) are edited in
+    place for shape stability; an explicit override always supersedes the
+    sugar (mock sim + UI agree; tested). QA's T-003 debounce test updated to
+    the v1.1 shape (label `Retirement age — Brian`, asserts the override).
+  - **Flow owner picker**: v1 shipped no flow-editing UI, so the owner picker
+    lives as an inline Select per row in a new "Recurring flows" table on the
+    Spending page (plus the account add-form). Flow CRUD forms remain future
+    work unless the coordinator wants them in v1.1.
+  - **Fix (mock)**: handlers returned live references into the mock db; React
+    Query cached those objects, so in-place PUT mutations aliased the cache
+    and suppressed re-renders. Every mock response is now `structuredClone`d.
+  - **Contract flags (no drift — mock behavior noted for T-005 alignment):**
+    1. *Horizon*: "runs to the latest life expectancy in the household" read
+       literally includes children — the demo 14-year-old (LE 95) would push
+       the self-age axis to ~127. Mock excludes `child`-role members from the
+       horizon; please clarify the contract wording.
+    2. *PUT /spending*: replace semantics for NEW categories aren't specified
+       — client sends them without `id` (typed `SpendingCategoryInput.id?`);
+       mock assigns ids to entries missing one. Backend should match.
+    3. *GET /dashboard `monthly_surplus`*: v1.1 doesn't say whether spending
+       categories count as outgo; mock includes them (otherwise the surplus
+       is misleadingly large once categories carry everyday spend).
+  - Residual risk: charts verified by unit tests + jsdom walks + dev-server
+    boot; no real-browser screenshot pass was possible in this environment —
+    suggest a quick visual QA of marker chips in both themes/modes.

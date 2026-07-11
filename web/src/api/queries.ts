@@ -12,13 +12,18 @@ import type {
   AccountCreate,
   AccountPatch,
   BalanceSnapshot,
+  FlowCreate,
+  FlowPatch,
   GoalCreate,
   GoalPatch,
+  HouseholdMemberCreate,
+  HouseholdMemberPatch,
   Profile,
   ScenarioCreate,
   ScenarioParams,
   ScenarioPatch,
   Settings,
+  SpendingProfileInput,
 } from './types'
 import { serializeParams } from '@/lib/scenarioParams'
 
@@ -26,6 +31,9 @@ export const qk = {
   session: ['session'] as const,
   dashboard: ['dashboard'] as const,
   profile: ['profile'] as const,
+  household: ['household'] as const,
+  spending: ['spending'] as const,
+  observedSpending: (months: number) => ['spending', 'observed', months] as const,
   accounts: ['accounts'] as const,
   balances: (id: number) => ['balances', id] as const,
   flows: ['flows'] as const,
@@ -47,6 +55,24 @@ export function useDashboard() {
 
 export function useProfile() {
   return useQuery({ queryKey: qk.profile, queryFn: api.profile.get })
+}
+
+export function useHousehold() {
+  return useQuery({ queryKey: qk.household, queryFn: api.household.list })
+}
+
+export function useSpending() {
+  return useQuery({ queryKey: qk.spending, queryFn: api.spending.get })
+}
+
+/** Observed spending over a trailing window; previous window's data is held
+ * while the new one loads so the bars never flash empty. */
+export function useObservedSpending(months: number) {
+  return useQuery({
+    queryKey: qk.observedSpending(months),
+    queryFn: () => api.spending.observed(months),
+    placeholderData: keepPreviousData,
+  })
 }
 
 export function useAccounts() {
@@ -126,6 +152,57 @@ export function useUpdateProfile() {
   return useInvalidating(
     (p: Profile) => api.profile.update(p),
     [qk.profile, qk.dashboard, ['simulate'], ['compare']],
+  )
+}
+
+/* household members feed the sim (timing) — invalidate simulations too */
+
+export function useCreateMember() {
+  return useInvalidating(
+    (m: HouseholdMemberCreate) => api.household.create(m),
+    [qk.household, ['simulate'], ['compare']],
+  )
+}
+
+export function usePatchMember() {
+  return useInvalidating(
+    (id: number, patch: HouseholdMemberPatch) => api.household.patch(id, patch),
+    [qk.household, ['simulate'], ['compare']],
+  )
+}
+
+export function useDeleteMember() {
+  return useInvalidating(
+    (id: number) => api.household.remove(id),
+    [qk.household, qk.accounts, qk.flows, ['simulate'], ['compare']],
+  )
+}
+
+export function useUpdateSpending() {
+  return useInvalidating(
+    (s: SpendingProfileInput) => api.spending.update(s),
+    [qk.spending, qk.dashboard, ['simulate'], ['compare']],
+  )
+}
+
+export function useCreateFlow() {
+  return useInvalidating(
+    (f: FlowCreate) => api.flows.create(f),
+    [qk.flows, qk.dashboard, ['simulate'], ['compare']],
+  )
+}
+
+export function usePatchFlow() {
+  return useInvalidating(
+    (id: number, patch: FlowPatch) => api.flows.patch(id, patch),
+    [qk.flows, qk.dashboard, ['simulate'], ['compare']],
+  )
+}
+
+export function useDeleteFlow() {
+  return useInvalidating(
+    (id: number) => api.flows.remove(id),
+    [qk.flows, qk.dashboard, ['simulate'], ['compare']],
   )
 }
 

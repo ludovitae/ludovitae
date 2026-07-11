@@ -37,9 +37,10 @@ describe('scenario studio slider', () => {
     await new Promise((r) => setTimeout(r, 500))
     const callsBefore = simSpy.mock.calls.length
 
-    // Two rapid changes on the retirement-age slider; the 300ms debounce should
-    // collapse them into a single re-simulation on the final value.
-    const slider = screen.getByLabelText('Retirement age') as HTMLInputElement
+    // Two rapid changes on the self member's retirement-age slider; the 300ms
+    // debounce should collapse them into a single re-simulation on the final
+    // value. (v1.1: the studio writes member_overrides, keyed by member id.)
+    const slider = screen.getByLabelText('Retirement age — Brian') as HTMLInputElement
     fireEvent.change(slider, { target: { value: '60' } })
     fireEvent.change(slider, { target: { value: '55' } })
 
@@ -49,9 +50,11 @@ describe('scenario studio slider', () => {
     const newSimCalls = simSpy.mock.calls.length - callsBefore
     expect(newSimCalls).toBe(1)
 
-    // The single re-sim ran on the settled value (retirement_age 55).
-    const lastReq = simSpy.mock.calls.at(-1)![0] as { params?: { retirement_age?: number } }
-    expect(lastReq.params?.retirement_age).toBe(55)
+    // The single re-sim ran on the settled value (self override → 55).
+    const lastReq = simSpy.mock.calls.at(-1)![0] as {
+      params?: { member_overrides?: Record<string, { retirement_age?: number }> }
+    }
+    expect(lastReq.params?.member_overrides?.['1']?.retirement_age).toBe(55)
 
     simSpy.mockRestore()
     cleanup()

@@ -1,10 +1,23 @@
-/** Mock simulation engine: seeded geometric-brownian-ish Monte Carlo over
- * annual steps so charts look real and respond to parameter changes.
- * Shapes match docs/API.md /simulate exactly. */
+/** Mock simulation engine (v1.1): seeded geometric-brownian-ish Monte Carlo
+ * over annual steps so charts look real and respond to parameter changes.
+ * Shapes match docs/API.md /simulate exactly, including `milestones` —
+ * milestones are an ENGINE output (decision log 2026-07-10), computed here
+ * from the same effective per-member timing the cash-flow loop uses, so the
+ * chart markers always agree with what the mock simulation actually did. */
 
-import type { Account, Flow, Profile, ScenarioParams, SimResult } from '../types'
+import type {
+  Account,
+  Flow,
+  HouseholdMember,
+  Milestone,
+  Profile,
+  ScenarioParams,
+  SimResult,
+  SpendingProfile,
+} from '../types'
 import { LIABILITY_TYPES } from '../types'
 import { gaussian, mulberry32 } from './rng'
+import { ssClaimFactor } from '@/lib/ssFactor'
 
 const RETURN_BY_CLASS: Record<string, { mu: number; sigma: number }> = {
   stocks: { mu: 0.07, sigma: 0.15 },
@@ -15,25 +28,128 @@ const RETURN_BY_CLASS: Record<string, { mu: number; sigma: number }> = {
 
 export interface MockSimInputs {
   profile: Profile
+  household: HouseholdMember[]
   accounts: Account[]
   flows: Flow[]
+  spending: SpendingProfile
   params: ScenarioParams
   nPaths: number
   seed: number
 }
 
-export function runMockSim({ profile, accounts, flows, params, nPaths, seed }: MockSimInputs): SimResult {
-  const startYear = new Date().getFullYear()
-  const startAge = startYear - profile.birth_year
-  const lifeExp = profile.life_expectancy
-  const nYears = Math.max(1, lifeExp - startAge)
-  const ages = Array.from({ length: nYears + 1 }, (_, i) => startAge + i)
+/** A member with scenario overrides resolved (docs/API.md v1.1 precedence:
+ * member_overrides > top-level retirement_age sugar for `self` > member). */
+interface EffectiveMember {
+  m: HouseholdMember
+  retirementAge: number | null
+  ssClaimAge: number | null
+  rmdStartAge: number | null
+}
 
-  const retirementAge = params.retirement_age ?? profile.retirement_age
+function resolveMembers(
+  household: HouseholdMember[],
+  accounts: Account[],
+  params: ScenarioParams,
+): EffectiveMember[] {
+  const self = household.find((m) => m.role === 'self') ?? household[0]
+  return household.map((m) => {
+    const ov = params.member_overrides?.[String(m.id)]
+    const retirementAge =
+      ov?.retirement_age ?? (m === self ? params.retirement_age : undefined) ?? m.retirement_age
+    const ssClaimAge =
+      m.ss_monthly_at_fra != null
+        ? Math.min(70, Math.max(62, ov?.ss_claim_age ?? m.ss_claim_age ?? 67))
+        : null
+    // RMDs: owned tax-deferred accounts; unowned ones fall to `self`.
+    const ownsTaxDeferred = accounts.some(
+      (a) =>
+        a.type === 'retirement' &&
+        a.include_in_net_worth &&
+        (a.member_id === m.id || (a.member_id == null && m.role === 'self')),
+    )
+    const rmdStartAge = ownsTaxDeferred ? (m.birth_year < 1960 ? 73 : 75) : null
+    return { m, retirementAge, ssClaimAge, rmdStartAge }
+  })
+}
+
+/** Milestones on the self-age axis, sorted by age; beyond-horizon omitted. */
+export function buildMilestones(
+  household: HouseholdMember[],
+  accounts: Account[],
+  params: ScenarioParams,
+  minSelfAge: number,
+  maxSelfAge: number,
+): Milestone[] {
+  const self = household.find((m) => m.role === 'self') ?? household[0]
+  if (!self) return []
+  const out: Milestone[] = []
+  const push = (year: number, kind: Milestone['kind'], label: string, memberId: number) => {
+    const age = year - self.birth_year
+    if (age < minSelfAge || age > maxSelfAge) return
+    out.push({ age, year, kind, label, member_id: memberId })
+  }
+  for (const em of resolveMembers(household, accounts, params)) {
+    if (em.retirementAge != null)
+      push(em.m.birth_year + em.retirementAge, 'retirement', `${em.m.name} retires`, em.m.id)
+    if (em.m.ss_monthly_at_fra != null && em.ssClaimAge != null) {
+      const pct = Math.round(ssClaimFactor(em.ssClaimAge) * 100)
+      push(
+        em.m.birth_year + em.ssClaimAge,
+        'ss_start',
+        `${em.m.name} claims Social Security (${pct}% of FRA)`,
+        em.m.id,
+      )
+    }
+    if (em.rmdStartAge != null)
+      push(em.m.birth_year + em.rmdStartAge, 'rmd_start', `RMDs begin for ${em.m.name}`, em.m.id)
+  }
+  const kindOrder: Record<Milestone['kind'], number> = { retirement: 0, ss_start: 1, rmd_start: 2 }
+  return out.sort((a, b) => a.age - b.age || kindOrder[a.kind] - kindOrder[b.kind] || a.member_id - b.member_id)
+}
+
+export function runMockSim({
+  profile,
+  household,
+  accounts,
+  flows,
+  spending,
+  params,
+  nPaths,
+  seed,
+}: MockSimInputs): SimResult {
+  const startYear = new Date().getFullYear()
+  const self = household.find((m) => m.role === 'self') ?? household[0]
+  if (!self) throw new Error('household must have a self member')
+  const selfAge0 = startYear - self.birth_year
+  // Horizon runs to the latest life expectancy in the household (v1.1).
+  // Mock reading: children are excluded — a 14-year-old's life expectancy
+  // would stretch the horizon decades past the adults (flagged to the
+  // coordinator as a contract clarification; see T-006 log).
+  const endYear = Math.max(
+    startYear + 1,
+    self.birth_year + self.life_expectancy,
+    ...household
+      .filter((m) => m.role !== 'child')
+      .map((m) => m.birth_year + m.life_expectancy),
+  )
+  const nYears = endYear - startYear
+  const ages = Array.from({ length: nYears + 1 }, (_, i) => selfAge0 + i)
+
+  const members = resolveMembers(household, accounts, params)
   const retirementSpending = params.annual_retirement_spending ?? profile.annual_retirement_spending
   const savingsDelta = (params.monthly_savings_delta ?? 0) * 12
   const inflation = (params.inflation_override_pct ?? profile.inflation_pct) / 100
+  // spending_delta_pct scales spending categories + expense flows only.
+  const spendScale = 1 + (params.spending_delta_pct ?? 0) / 100
+  const taxRate = profile.effective_tax_rate_pct / 100
   const events = params.events ?? []
+
+  // Year index at which the LAST member with a retirement age retires —
+  // generic expenses stop and annual_retirement_spending takes over there.
+  const retireIdxs = members
+    .filter((em) => em.retirementAge != null)
+    .map((em) => em.m.birth_year + em.retirementAge! - startYear)
+  const lastRetireIdx = retireIdxs.length > 0 ? Math.max(...retireIdxs) : Infinity
 
   // Bucket starting balances.
   const included = accounts.filter((a) => a.include_in_net_worth)
@@ -41,6 +157,7 @@ export function runMockSim({ profile, accounts, flows, params, nPaths, seed }: M
   let invested0 = 0
   let property0 = 0
   let debt0 = 0
+  let taxDeferred0 = 0
   let wMu = 0
   let wSigma = 0
   let propGrowthWeighted = 0
@@ -54,6 +171,7 @@ export function runMockSim({ profile, accounts, flows, params, nPaths, seed }: M
       cash0 += a.balance
     } else {
       invested0 += a.balance
+      if (a.type === 'retirement') taxDeferred0 += a.balance
       const r = RETURN_BY_CLASS[a.asset_class ?? 'mixed'] ?? RETURN_BY_CLASS.mixed!
       wMu += r.mu * a.balance
       wSigma += r.sigma * a.balance
@@ -63,24 +181,62 @@ export function runMockSim({ profile, accounts, flows, params, nPaths, seed }: M
   let mu = invested0 > 0 ? wMu / invested0 : 0.055
   const sigma = invested0 > 0 ? wSigma / invested0 : 0.11
   if (params.return_override_pct != null) mu = params.return_override_pct / 100
+  const taxDeferredShare = invested0 > 0 ? taxDeferred0 / invested0 : 0
 
-  // Annual pre-retirement flows.
-  let incomeAnnual = 0
-  let expenseAnnual = 0
-  let contribAnnual = 0
-  for (const f of flows) {
-    if (f.kind === 'income') incomeAnnual += f.amount_monthly * 12
-    else if (f.kind === 'expense') expenseAnnual += f.amount_monthly * 12
-    else contribAnnual += f.amount_monthly * 12
+  // A flow's stop year-index: income/contributions with ends_at_retirement
+  // stop at their OWNER's retirement (unowned → the last-retirement year).
+  function flowStopIdx(f: Flow): number {
+    if (!f.ends_at_retirement) return Infinity
+    if (f.member_id != null) {
+      const owner = members.find((em) => em.m.id === f.member_id)
+      if (owner?.retirementAge != null) return owner.m.birth_year + owner.retirementAge - startYear
+    }
+    return lastRetireIdx
   }
-  // Savings feeding invested assets each pre-retirement year: explicit
-  // contributions plus half of free surplus (rest assumed spent/cash drag),
-  // plus the scenario's savings delta.
-  const surplus = Math.max(0, incomeAnnual - expenseAnnual - contribAnnual)
-  const baseSavings = contribAnnual + surplus * 0.5
+  const incomeFlows = flows.filter((f) => f.kind === 'income').map((f) => ({ annual: f.amount_monthly * 12, stop: flowStopIdx(f) }))
+  const contribFlows = flows.filter((f) => f.kind === 'contribution').map((f) => ({ annual: f.amount_monthly * 12, stop: flowStopIdx(f) }))
+  // Generic expenses (flows + categories) run until the retirement transition.
+  const expenseAnnual =
+    flows.filter((f) => f.kind === 'expense').reduce((s, f) => s + f.amount_monthly * 12, 0) * spendScale
+  const categoriesAnnual =
+    spending.categories.reduce((s, c) => s + c.monthly_amount * 12, 0) * spendScale
 
-  const ssAnnual = profile.social_security_monthly * 12
-  const debtPayoffYears = 15
+  const incomeAt = (i: number) => incomeFlows.reduce((s, f) => s + (i <= f.stop ? f.annual : 0), 0)
+  const contribAt = (i: number) => contribFlows.reduce((s, f) => s + (i <= f.stop ? f.annual : 0), 0)
+
+  // Social Security: each member's benefit starts at their claim age, scaled
+  // by the claim-age factor (62→0.70 … 70→1.24 around FRA 67).
+  function ssAt(i: number, inflator: number): number {
+    let v = 0
+    for (const em of members) {
+      if (em.m.ss_monthly_at_fra == null || em.ssClaimAge == null) continue
+      const memberAge = startYear + i - em.m.birth_year
+      if (memberAge >= em.ssClaimAge) {
+        v += em.m.ss_monthly_at_fra * 12 * ssClaimFactor(em.ssClaimAge) * inflator
+      }
+    }
+    return v
+  }
+
+  // RMD tax drag: forced distributions from tax-deferred balances get taxed
+  // at the effective rate. Rough mock: ~1/25 of the tax-deferred slice per
+  // member past their RMD start age, weighted by that member's share.
+  const memberTaxDeferred = new Map<number, number>()
+  for (const a of included) {
+    if (a.type !== 'retirement') continue
+    const ownerId = a.member_id ?? self.id
+    memberTaxDeferred.set(ownerId, (memberTaxDeferred.get(ownerId) ?? 0) + a.balance)
+  }
+  function rmdTaxDragFactor(i: number): number {
+    if (taxDeferred0 <= 0) return 0
+    let sharePast = 0
+    for (const em of members) {
+      if (em.rmdStartAge == null) continue
+      const memberAge = startYear + i - em.m.birth_year
+      if (memberAge >= em.rmdStartAge) sharePast += (memberTaxDeferred.get(em.m.id) ?? 0) / taxDeferred0
+    }
+    return sharePast * taxDeferredShare * taxRate * (1 / 25)
+  }
 
   function eventCashflow(age: number, inflator: number): number {
     let v = 0
@@ -88,7 +244,7 @@ export function runMockSim({ profile, accounts, flows, params, nPaths, seed }: M
       if (e.kind === 'one_time') {
         if (e.age === age) v += (e.amount ?? 0) * inflator
       } else {
-        const start = e.start_age ?? startAge
+        const start = e.start_age ?? selfAge0
         const end = e.end_age ?? Infinity
         if (age >= start && age <= end) {
           const monthly = e.amount_monthly ?? 0
@@ -104,6 +260,8 @@ export function runMockSim({ profile, accounts, flows, params, nPaths, seed }: M
     ruinAge: number | null
   }
 
+  const debtPayoffYears = 15
+
   function runPath(rng: (() => number) | null): PathOut {
     let cash = cash0
     let invested = invested0
@@ -114,22 +272,28 @@ export function runMockSim({ profile, accounts, flows, params, nPaths, seed }: M
     let ruinAge: number | null = null
 
     for (let i = 1; i <= nYears; i++) {
-      const age = startAge + i
+      const age = selfAge0 + i
       const inflator = Math.pow(1 + inflation, i)
       const drift = mu - (sigma * sigma) / 2
       const shock = rng ? gaussian(rng) : 0
       const ret = rng ? Math.exp(drift + sigma * shock) - 1 : mu
 
       invested *= 1 + ret
+      invested -= invested * rmdTaxDragFactor(i)
       property *= 1 + propGrowth
       debt = Math.max(0, debt0 * (1 - i / debtPayoffYears))
 
       let net: number
-      if (age <= retirementAge) {
-        net = (baseSavings + savingsDelta) * Math.pow(1.02, i)
+      if (i <= lastRetireIdx) {
+        // Accumulation / transition years: whoever still works earns; savings
+        // are contributions + half the free surplus, plus the scenario delta.
+        const income = incomeAt(i)
+        const contrib = contribAt(i)
+        const surplus = Math.max(0, income - expenseAnnual - categoriesAnnual - contrib)
+        net = (contrib + surplus * 0.5 + savingsDelta) * Math.pow(1.02, i) + ssAt(i, inflator)
       } else {
-        const ss = age >= profile.social_security_start_age ? ssAnnual * inflator : 0
-        net = ss - retirementSpending * inflator
+        // Post-transition: household retirement spending takes over.
+        net = ssAt(i, inflator) - retirementSpending * inflator
       }
       net += eventCashflow(age, inflator)
 
@@ -194,7 +358,7 @@ export function runMockSim({ profile, accounts, flows, params, nPaths, seed }: M
   const cashShare = cash0 / Math.max(1, cash0 + invested0 + property0)
 
   return {
-    engine_version: 'mock-1',
+    engine_version: 'mock-1.1',
     n_paths: nPaths,
     seed,
     start_year: startYear,
@@ -214,6 +378,7 @@ export function runMockSim({ profile, accounts, flows, params, nPaths, seed }: M
       p50: p50[nYears]!,
       p90: p90[nYears]!,
     },
+    milestones: buildMilestones(household, accounts, params, selfAge0, selfAge0 + nYears),
   }
 
   function debtAt(i: number): number {

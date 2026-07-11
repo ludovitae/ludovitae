@@ -19,6 +19,14 @@
   /* Type */
   --font-sans:
     'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* Milestone markers — one hue per kind, identical across themes/modes.
+   * Validated (dataviz six checks) against both chart surfaces alongside the
+   * series blues: worst adjacent-pair CVD ΔE 16.4, contrast ≥ 3:1. Chips add
+   * icon + label, so kind identity is never color-alone. */
+  --ms-retirement: #d55181;
+  --ms-ss: #149bb4;
+  --ms-rmd: #c98500;
 }
 
 /* ------------------------------- fintech · dark -------------------------- */

@@ -6,14 +6,17 @@ import {
   useCompare,
   useCreateScenario,
   useDeleteScenario,
+  useHousehold,
   usePatchScenario,
   useProfile,
   useScenarios,
   useSimulation,
 } from '@/api/queries'
-import type { Scenario, ScenarioEvent, ScenarioParams } from '@/api/types'
+import type { HouseholdMember, Scenario, ScenarioEvent, ScenarioParams } from '@/api/types'
 import { FanChart } from '@/charts/FanChart'
 import type { FanChartSeries } from '@/charts/FanChart'
+import { toMarkers } from '@/charts/milestones'
+import type { MarkerDatum } from '@/charts/milestones'
 import { ProbabilityGauge } from '@/charts/Gauge'
 import { Button } from '@/components/Button'
 import { Card, CardHeader } from '@/components/Card'
@@ -23,7 +26,14 @@ import { Skeleton } from '@/components/Skeleton'
 import { Slider } from '@/components/Slider'
 import { IconCheck, IconPin, IconPlus, IconX } from '@/components/icons'
 import { formatMoney, formatMoneyCompact, formatProbability } from '@/lib/format'
-import { cleanParams, paramsEqual, serializeParams } from '@/lib/scenarioParams'
+import {
+  cleanParams,
+  effectiveMemberTiming,
+  paramsEqual,
+  serializeParams,
+  withMemberOverride,
+} from '@/lib/scenarioParams'
+import { SS_CLAIM_MAX, SS_CLAIM_MIN, ssClaimFactor } from '@/lib/ssFactor'
 import { useDebounced } from '@/lib/useDebounced'
 import { PageHeader } from '@/layout/AppShell'
 
@@ -39,6 +49,8 @@ const CHART_SLOTS = [
 export function ScenariosPage() {
   const { data: scenarios, isPending: scenariosPending } = useScenarios()
   const { data: profile } = useProfile()
+  const { data: household } = useHousehold()
+  const self = household?.find((m) => m.role === 'self')
 
   const [activeId, setActiveId] = useState(0)
   const [draft, setDraft] = useState<ScenarioParams>({})
@@ -68,7 +80,7 @@ export function ScenariosPage() {
   const compare = useCompare(compareIds, pinned.length >= 2)
   const comparing = pinned.length >= 2
 
-  if (scenariosPending || !profile || !active) {
+  if (scenariosPending || !profile || !active || !self) {
     return (
       <>
         <PageHeader title="Scenario studio" />
@@ -81,9 +93,13 @@ export function ScenariosPage() {
   }
 
   const dirty = !paramsEqual(draft, active.params)
-  const retirementAge = draft.retirement_age ?? profile.retirement_age
+  const retirementAge =
+    effectiveMemberTiming(draft, self.id, 'retirement_age', self.retirement_age, true) ?? 65
   const spending = draft.annual_retirement_spending ?? profile.annual_retirement_spending
   const savingsDelta = draft.monthly_savings_delta ?? 0
+  const spendingDelta = draft.spending_delta_pct ?? 0
+  const retiringMembers = (household ?? []).filter((m) => m.retirement_age != null)
+  const ssMembers = (household ?? []).filter((m) => m.ss_monthly_at_fra != null)
 
   function togglePin(id: number) {
     setPinned((prev) => {
@@ -129,37 +145,76 @@ export function ScenariosPage() {
             hint={active.is_baseline ? 'Tweaks are a diff against your real plan' : active.description || undefined}
           />
           <div className="flex flex-col gap-5 px-5 pt-2 pb-5">
-            <Slider
-              label="Retirement age"
-              value={retirementAge}
-              min={45}
-              max={75}
-              format={(v) => String(v)}
-              onChange={(v) => setDraft({ ...draft, retirement_age: v })}
-            />
-            <Slider
-              label="Monthly savings"
-              value={savingsDelta}
-              min={-3000}
-              max={3000}
-              step={100}
-              format={(v) => (v === 0 ? 'as today' : `${v > 0 ? '+' : '−'}${formatMoney(Math.abs(v))}/mo`)}
-              onChange={(v) => setDraft({ ...draft, monthly_savings_delta: v })}
-              hint="Relative to what you save now"
-            />
-            <Slider
-              label="Retirement spending"
-              value={spending}
-              min={30000}
-              max={160000}
-              step={2500}
-              format={(v) => `${formatMoneyCompact(v)}/yr`}
-              onChange={(v) => setDraft({ ...draft, annual_retirement_spending: v })}
-            />
+            <div className="flex flex-col gap-4">
+              <p className="-mb-1 text-[11px] font-semibold tracking-wide text-ink-3 uppercase">Timing</p>
+              {retiringMembers.map((m) => (
+                <Slider
+                  key={`retire-${m.id}`}
+                  label={`Retirement age — ${firstName(m.name)}`}
+                  value={
+                    effectiveMemberTiming(draft, m.id, 'retirement_age', m.retirement_age, m.role === 'self') ?? 65
+                  }
+                  min={45}
+                  max={75}
+                  format={(v) => String(v)}
+                  onChange={(v) =>
+                    setDraft(
+                      withMemberOverride(draft, m.id, 'retirement_age', v, m.retirement_age, m.role === 'self'),
+                    )
+                  }
+                />
+              ))}
+              {ssMembers.map((m) => (
+                <Slider
+                  key={`ss-${m.id}`}
+                  label={`SS claim age — ${firstName(m.name)}`}
+                  value={effectiveMemberTiming(draft, m.id, 'ss_claim_age', m.ss_claim_age ?? 67, false) ?? 67}
+                  min={SS_CLAIM_MIN}
+                  max={SS_CLAIM_MAX}
+                  format={(v) => `${v} → ${Math.round(ssClaimFactor(v) * 100)}%`}
+                  hint="Share of the full (age-67) benefit"
+                  onChange={(v) =>
+                    setDraft(withMemberOverride(draft, m.id, 'ss_claim_age', v, m.ss_claim_age, false))
+                  }
+                />
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <p className="-mb-1 text-[11px] font-semibold tracking-wide text-ink-3 uppercase">Money</p>
+              <Slider
+                label="Monthly savings"
+                value={savingsDelta}
+                min={-3000}
+                max={3000}
+                step={100}
+                format={(v) => (v === 0 ? 'as today' : `${v > 0 ? '+' : '−'}${formatMoney(Math.abs(v))}/mo`)}
+                onChange={(v) => setDraft({ ...draft, monthly_savings_delta: v })}
+                hint="Relative to what you save now"
+              />
+              <Slider
+                label="Everyday spending"
+                value={spendingDelta}
+                min={-30}
+                max={30}
+                format={(v) => (v === 0 ? 'as planned' : `${v > 0 ? '+' : ''}${v}%`)}
+                onChange={(v) => setDraft({ ...draft, spending_delta_pct: v })}
+                hint="Scales spending categories and expense flows"
+              />
+              <Slider
+                label="Retirement spending"
+                value={spending}
+                min={30000}
+                max={160000}
+                step={2500}
+                format={(v) => `${formatMoneyCompact(v)}/yr`}
+                onChange={(v) => setDraft({ ...draft, annual_retirement_spending: v })}
+              />
+            </div>
 
             <EventChips
               events={draft.events ?? []}
-              currentAge={new Date().getFullYear() - profile.birth_year}
+              currentAge={new Date().getFullYear() - self.birth_year}
               retirementAge={retirementAge}
               onChange={(events) => setDraft({ ...draft, events })}
             />
@@ -184,16 +239,17 @@ export function ScenariosPage() {
             <CompareView
               results={compare.data.results}
               pinned={pinned}
+              activeId={active.id}
+              household={household ?? []}
               showBands={compareBands}
               onToggleBands={setCompareBands}
               onUnpin={togglePin}
-              profileRetirement={profile.retirement_age}
             />
           ) : (
             <SingleView
               simData={sim.data}
               isFetching={sim.isFetching}
-              retirementAge={retirementAge}
+              household={household ?? []}
               scenarioName={active.is_baseline && dirty ? 'Draft' : active.name}
             />
           )}
@@ -201,6 +257,10 @@ export function ScenariosPage() {
       </div>
     </>
   )
+}
+
+function firstName(name: string): string {
+  return name.trim().split(/\s+/)[0] ?? name
 }
 
 /* ------------------------------- tabs ------------------------------------ */
@@ -258,15 +318,24 @@ function ScenarioTabs({
 
 /* ---------------------------- single result ------------------------------ */
 
+/** Household lookup for compact marker chips (first names). */
+function markersFor(
+  milestones: Parameters<typeof toMarkers>[0] | undefined,
+  household: HouseholdMember[],
+): MarkerDatum[] {
+  if (!milestones || milestones.length === 0) return []
+  return toMarkers(milestones, (id) => household.find((m) => m.id === id)?.name)
+}
+
 function SingleView({
   simData,
   isFetching,
-  retirementAge,
+  household,
   scenarioName,
 }: {
   simData: ReturnType<typeof useSimulation>['data']
   isFetching: boolean
-  retirementAge: number
+  household: HouseholdMember[]
   scenarioName: string
 }) {
   if (!simData) {
@@ -305,14 +374,14 @@ function SingleView({
       <Card className={isFetching ? 'opacity-90 transition-opacity duration-150' : 'transition-opacity duration-150'}>
         <CardHeader
           title="Projected net worth"
-          hint="Shaded: 10–90th and 25–75th percentile outcomes · dashed: expected path"
+          hint="Shaded: 10–90th and 25–75th percentile outcomes · dashed: expected path · flags: life milestones"
         />
         <div className="px-4 pt-1 pb-4">
           <FanChart
             series={series}
             ages={simData.ages}
             startYear={simData.start_year}
-            refAge={retirementAge}
+            milestones={markersFor(simData.milestones, household)}
             height={360}
           />
         </div>
@@ -338,17 +407,19 @@ function EndStat({ label, value, big }: { label: string; value: number; big?: bo
 function CompareView({
   results,
   pinned,
+  activeId,
+  household,
   showBands,
   onToggleBands,
   onUnpin,
-  profileRetirement,
 }: {
   results: (ReturnType<typeof useSimulation>['data'] & { scenario_id: number; name: string })[]
   pinned: { id: number; slot: number }[]
+  activeId: number
+  household: HouseholdMember[]
   showBands: boolean
   onToggleBands: (v: boolean) => void
   onUnpin: (id: number) => void
-  profileRetirement: number
 }) {
   const colorFor = (id: number) =>
     CHART_SLOTS[pinned.find((p) => p.id === id)?.slot ?? 0] ?? CHART_SLOTS[0]
@@ -362,12 +433,18 @@ function CompareView({
     showBands,
   }))
 
+  // Milestones of ONE scenario only — the active one if pinned, else the
+  // first pinned. Overlaying every pinned scenario's marker set (even dimmed)
+  // turns to clutter beyond two scenarios; decision logged in T-006.
+  const milestoneSource = results.find((r) => r!.scenario_id === activeId) ?? first
+  const markers = markersFor(milestoneSource!.milestones, household)
+
   return (
     <>
       <Card>
         <CardHeader
           title="Compare scenarios"
-          hint="Median paths overlaid — shared probe reads all of them"
+          hint={`Median paths overlaid — shared probe reads all of them · milestones: ${milestoneSource!.name}`}
           action={
             <label className="flex items-center gap-2 text-xs text-ink-2">
               Bands
@@ -380,7 +457,7 @@ function CompareView({
             series={series}
             ages={first!.ages}
             startYear={first!.start_year}
-            refAge={profileRetirement}
+            milestones={markers}
             height={360}
             ariaLabel="Scenario comparison chart"
           />

@@ -7,6 +7,7 @@ import {
   useCreateAccount,
   useDeleteAccount,
   useDeleteBalance,
+  useHousehold,
   usePatchAccount,
 } from '@/api/queries'
 import type { Account, AccountCreate, AccountType, AssetClass } from '@/api/types'
@@ -39,8 +40,15 @@ const TYPE_LABELS: Record<AccountType, string> = {
 
 export function AccountsPage() {
   const { data: accounts, isPending } = useAccounts()
+  const { data: members } = useHousehold()
   const [adding, setAdding] = useState(false)
   const [historyFor, setHistoryFor] = useState<Account | null>(null)
+
+  const ownerName = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const m of members ?? []) map.set(m.id, m.name)
+    return (id: number | null) => (id == null ? null : (map.get(id) ?? null))
+  }, [members])
 
   const groups = useMemo(() => {
     const assets = (accounts ?? []).filter((a) => !LIABILITY_TYPES.includes(a.type))
@@ -80,8 +88,8 @@ export function AccountsPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-5">
-          <AccountGroup title="Assets" accounts={groups.assets} onHistory={setHistoryFor} />
-          <AccountGroup title="Liabilities" accounts={groups.liabilities} onHistory={setHistoryFor} negative />
+          <AccountGroup title="Assets" accounts={groups.assets} ownerName={ownerName} onHistory={setHistoryFor} />
+          <AccountGroup title="Liabilities" accounts={groups.liabilities} ownerName={ownerName} onHistory={setHistoryFor} negative />
         </div>
       )}
 
@@ -94,11 +102,13 @@ export function AccountsPage() {
 function AccountGroup({
   title,
   accounts,
+  ownerName,
   onHistory,
   negative,
 }: {
   title: string
   accounts: Account[]
+  ownerName: (id: number | null) => string | null
   onHistory: (a: Account) => void
   negative?: boolean
 }) {
@@ -113,7 +123,7 @@ function AccountGroup({
       <Card>
         <ul className="divide-y divide-(--border)">
           {accounts.map((a) => (
-            <AccountRow key={a.id} account={a} negative={negative} onHistory={() => onHistory(a)} />
+            <AccountRow key={a.id} account={a} owner={ownerName(a.member_id)} negative={negative} onHistory={() => onHistory(a)} />
           ))}
         </ul>
       </Card>
@@ -123,10 +133,12 @@ function AccountGroup({
 
 function AccountRow({
   account,
+  owner,
   negative,
   onHistory,
 }: {
   account: Account
+  owner: string | null
   negative?: boolean
   onHistory: () => void
 }) {
@@ -142,6 +154,7 @@ function AccountRow({
         <p className="truncate text-sm font-medium text-ink">{account.name}</p>
         <p className="truncate text-xs text-ink-3">
           {TYPE_LABELS[account.type]}
+          {owner ? ` · ${owner}` : ''}
           {account.institution && account.institution !== '—' ? ` · ${account.institution}` : ''}
           {account.asset_class ? ` · ${account.asset_class}` : ''}
           {account.growth_rate_pct !== null ? ` · ${account.growth_rate_pct > 0 ? '+' : ''}${account.growth_rate_pct}%/yr` : ''}
@@ -223,6 +236,7 @@ function InlineBalance({ account, negative }: { account: Account; negative?: boo
 
 function AddAccountModal({ onClose }: { onClose: () => void }) {
   const create = useCreateAccount()
+  const { data: members } = useHousehold()
   const [form, setForm] = useState<AccountCreate>({
     name: '',
     type: 'checking',
@@ -230,6 +244,7 @@ function AddAccountModal({ onClose }: { onClose: () => void }) {
     balance: 0,
     growth_rate_pct: null,
     asset_class: 'cash',
+    member_id: null,
     include_in_net_worth: true,
     notes: '',
   })
@@ -346,6 +361,27 @@ function AddAccountModal({ onClose }: { onClose: () => void }) {
             </Field>
           ) : null}
         </div>
+        <Field
+          label="Owner"
+          hint={form.type === 'retirement' ? 'Sets whose RMD clock this account follows' : undefined}
+        >
+          {(id) => (
+            <Select
+              id={id}
+              value={form.member_id == null ? '' : String(form.member_id)}
+              onChange={(e) =>
+                setForm({ ...form, member_id: e.target.value === '' ? null : Number(e.target.value) })
+              }
+            >
+              <option value="">Household / shared</option>
+              {(members ?? []).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
         <div className="mt-1 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Cancel
