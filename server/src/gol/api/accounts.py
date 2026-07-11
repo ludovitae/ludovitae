@@ -10,7 +10,13 @@ from pydantic import BaseModel, Field
 from gol.api.common import Db, get_or_404, iso, parse_date
 from gol.auth.deps import Authenticated
 from gol.errors import ApiError
-from gol.models import ACCOUNT_TYPES, ASSET_CLASSES, Account, BalanceSnapshot
+from gol.models import (
+    ACCOUNT_TYPES,
+    ASSET_CLASSES,
+    Account,
+    BalanceSnapshot,
+    HouseholdMember,
+)
 
 router = APIRouter(tags=["accounts"])
 
@@ -22,6 +28,7 @@ class AccountCreate(BaseModel):
     balance: float = 0.0
     growth_rate_pct: float | None = None
     asset_class: str | None = None
+    member_id: int | None = None
     include_in_net_worth: bool = True
     notes: str = ""
 
@@ -33,6 +40,7 @@ class AccountPatch(BaseModel):
     balance: float | None = None
     growth_rate_pct: float | None = None
     asset_class: str | None = None
+    member_id: int | None = None
     include_in_net_worth: bool | None = None
     notes: str | None = None
 
@@ -51,6 +59,11 @@ def _validate_enums(type_: str | None, asset_class: str | None) -> None:
         )
 
 
+def _validate_member(db, member_id: int | None) -> None:
+    if member_id is not None:
+        get_or_404(db, HouseholdMember, member_id, "member_not_found")
+
+
 def _serialize(acc: Account) -> dict:
     return {
         "id": acc.id,
@@ -60,6 +73,7 @@ def _serialize(acc: Account) -> dict:
         "balance": acc.balance,
         "growth_rate_pct": acc.growth_rate_pct,
         "asset_class": acc.asset_class,
+        "member_id": acc.member_id,
         "include_in_net_worth": acc.include_in_net_worth,
         "notes": acc.notes,
         "created_at": iso(acc.created_at),
@@ -86,12 +100,14 @@ def list_accounts(db: Db, _: Authenticated):
 @router.post("/accounts", status_code=201)
 def create_account(body: AccountCreate, db: Db, _: Authenticated):
     _validate_enums(body.type, body.asset_class)
+    _validate_member(db, body.member_id)
     acc = Account(
         name=body.name,
         type=body.type,
         institution=body.institution,
         growth_rate_pct=body.growth_rate_pct,
         asset_class=body.asset_class,
+        member_id=body.member_id,
         include_in_net_worth=body.include_in_net_worth,
         notes=body.notes,
     )
@@ -111,6 +127,7 @@ def patch_account(account_id: int, body: AccountPatch, db: Db, _: Authenticated)
     acc = get_or_404(db, Account, account_id, "account_not_found")
     data = body.model_dump(exclude_unset=True)
     _validate_enums(data.get("type"), data.get("asset_class"))
+    _validate_member(db, data.get("member_id"))
     balance = data.pop("balance", None)
     for key, value in data.items():
         setattr(acc, key, value)

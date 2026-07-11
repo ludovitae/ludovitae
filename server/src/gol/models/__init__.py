@@ -40,6 +40,8 @@ CASH_TYPES = ("checking", "savings")
 PROPERTY_TYPES = ("property", "vehicle", "other_asset")
 ASSET_CLASSES = ("stocks", "bonds", "cash", "mixed")
 FLOW_KINDS = ("income", "expense", "contribution")
+MEMBER_ROLES = ("self", "partner", "child", "other")
+SPENDING_KINDS = ("essential", "discretionary")
 
 
 def utcnow() -> dt.datetime:
@@ -47,17 +49,47 @@ def utcnow() -> dt.datetime:
 
 
 class Profile(Base):
+    """Household-level assumptions only (v1.1) — person-level fields live on
+    HouseholdMember. monthly_savings_target is the spending profile's
+    informational target (docs/API.md /spending)."""
+
     __tablename__ = "profile"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    birth_year: Mapped[int] = mapped_column(Integer, default=1980)
-    retirement_age: Mapped[int] = mapped_column(Integer, default=65)
-    life_expectancy: Mapped[int] = mapped_column(Integer, default=92)
     annual_retirement_spending: Mapped[float] = mapped_column(Money, default=80000.0)
-    social_security_monthly: Mapped[float] = mapped_column(Money, default=0.0)
-    social_security_start_age: Mapped[int] = mapped_column(Integer, default=67)
     inflation_pct: Mapped[float] = mapped_column(Float, default=2.5)
     effective_tax_rate_pct: Mapped[float] = mapped_column(Float, default=18.0)
+    monthly_savings_target: Mapped[float] = mapped_column(Money, default=0.0)
+
+
+class HouseholdMember(Base):
+    """A person in the household (v1.1). Exactly one `self` row exists; it is
+    created by migration/first access and cannot be deleted."""
+
+    __tablename__ = "household_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(16))
+    birth_year: Mapped[int] = mapped_column(Integer)
+    life_expectancy: Mapped[int] = mapped_column(Integer, default=92)
+    retirement_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ss_monthly_at_fra: Mapped[float | None] = mapped_column(Money, nullable=True)
+    ss_claim_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class SpendingCategory(Base):
+    """Planned spending stream (v1.1); coexists with expense flows (both count
+    in the sim — see docs/API.md double-count rule)."""
+
+    __tablename__ = "spending_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    monthly_amount: Mapped[float] = mapped_column(Money, default=0.0)
+    kind: Mapped[str] = mapped_column(String(16), default="essential")
+    annual_growth_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class Account(Base):
@@ -69,6 +101,9 @@ class Account(Base):
     institution: Mapped[str | None] = mapped_column(String(200), nullable=True)
     growth_rate_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     asset_class: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    member_id: Mapped[int | None] = mapped_column(
+        ForeignKey("household_members.id", ondelete="SET NULL"), nullable=True
+    )
     include_in_net_worth: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.date] = mapped_column(Date, default=dt.date.today)
@@ -112,6 +147,9 @@ class Flow(Base):
         ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
     )
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    member_id: Mapped[int | None] = mapped_column(
+        ForeignKey("household_members.id", ondelete="SET NULL"), nullable=True
+    )
     ends_at_retirement: Mapped[bool] = mapped_column(Boolean, default=False)
 
 

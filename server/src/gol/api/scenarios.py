@@ -33,12 +33,22 @@ class ScenarioEvent(BaseModel):
     end_age: int | None = None
 
 
-class ScenarioParams(BaseModel):
+class MemberOverride(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     retirement_age: int | None = Field(default=None, ge=18, le=100)
+    ss_claim_age: int | None = Field(default=None, ge=62, le=70)
+
+
+class ScenarioParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # kept for compatibility: sugar for the self member's retirement override
+    retirement_age: int | None = Field(default=None, ge=18, le=100)
+    member_overrides: dict[str, MemberOverride] | None = None
     monthly_savings_delta: float | None = None
     annual_retirement_spending: float | None = Field(default=None, ge=0)
+    spending_delta_pct: float | None = Field(default=None, ge=-100, le=500)
     return_override_pct: float | None = Field(default=None, ge=-20, le=50)
     inflation_override_pct: float | None = Field(default=None, ge=-5, le=50)
     events: list[ScenarioEvent] | None = None
@@ -73,6 +83,12 @@ def validate_event(ev: ScenarioEvent) -> None:
 def _clean_params(params: ScenarioParams) -> dict:
     for ev in params.events or []:
         validate_event(ev)
+    for key in params.member_overrides or {}:
+        if not key.isdigit():
+            raise ApiError(
+                422, "validation_error",
+                "member_overrides keys must be member ids as strings",
+            )
     return params.model_dump(exclude_none=True)
 
 
