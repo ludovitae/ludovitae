@@ -336,8 +336,12 @@ def test_contract_walk_every_endpoint(authed):
     )
     assert preview.status_code == 200
     pv = preview.json()
-    assert set(pv) == {"columns", "sample_rows", "suggested_mapping"}
+    # v1.2.2 (T-009): matched_preset + sign_hint join the CSV preview
+    assert set(pv) == {"columns", "sample_rows", "suggested_mapping",
+                       "matched_preset", "sign_hint"}
     assert isinstance(pv["columns"], list) and isinstance(pv["sample_rows"], list)
+    assert pv["matched_preset"] is None  # nothing saved yet
+    assert pv["sign_hint"] is None  # asset account: heuristic silent
     # sample_rows: list of {column: value} objects
     assert isinstance(pv["sample_rows"][0], dict)
     assert set(pv["sample_rows"][0]) <= set(pv["columns"])
@@ -346,10 +350,24 @@ def test_contract_walk_every_endpoint(authed):
         "/api/v1/import/commit",
         files={"file": ("t.csv", csv_data, "text/csv")},
         data={"kind": "csv", "account_id": str(acc_id),
-              "mapping": '{"date": "Date", "amount": "Amount", "payee": "Description"}'},
+              "mapping": '{"date": "Date", "amount": "Amount", "payee": "Description"}',
+              "save_preset": "Contract Bank"},
     )
     assert commit.status_code == 200
     _assert_shape(commit.json(), {"imported": int, "skipped_duplicates": int}, "import/commit")
+
+    # import presets (v1.2.2, T-009): saved by the commit above
+    presets = authed.get("/api/v1/import/presets")
+    assert presets.status_code == 200 and isinstance(presets.json(), list)
+    _assert_shape(
+        presets.json()[0],
+        {"id": int, "name": str, "header_fingerprint": str, "mapping": dict,
+         "flip_signs": bool, "created_at": str},
+        "GET /import/presets[0]",
+    )
+    assert authed.delete(
+        f"/api/v1/import/presets/{presets.json()[0]['id']}"
+    ).status_code == 204
 
     txns = authed.get(f"/api/v1/transactions?account_id={acc_id}")
     assert isinstance(txns.json(), list)
@@ -528,7 +546,8 @@ def test_401_shape_on_every_unauthenticated_read(client):
                  "/dashboard", "/settings", "/transactions",
                  "/transfers/candidates", "/rules", "/spending/summary",
                  "/spending/recurring", "/spending/hotspots",
-                 "/spending/forecast", "/settings/ai", "/ai/usage", "/export"):
+                 "/spending/forecast", "/settings/ai", "/ai/usage", "/export",
+                 "/import/presets"):
         resp = client.get(f"/api/v1{path}")
         assert resp.status_code == 401, path
         assert resp.json() == {
