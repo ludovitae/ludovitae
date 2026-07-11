@@ -225,6 +225,25 @@ def test_trailing_summary_rows_are_skipped(authed, checking):
     assert result == {"imported": 2, "skipped_duplicates": 0}
 
 
+def test_trailing_row_with_valid_date_and_bad_amount_fails_closed(authed, checking):
+    """Fail-closed (security suite rule): trailing tolerance only covers
+    date-less summary footers — a dated row with a broken amount is data
+    corruption even at the end of the file."""
+    data = (
+        "Date,Description,Amount\n"
+        "2026-06-01,PAYROLL,4900.00\n"
+        "2026-06-03,GLITCH," + "9" * 25 + "\n"
+    )
+    mapping = '{"date": "Date", "amount": "Amount", "payee": "Description"}'
+    resp = authed.post(
+        "/api/v1/import/commit",
+        files={"file": ("t.csv", data, "text/csv")},
+        data={"kind": "csv", "account_id": str(checking["id"]), "mapping": mapping},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "parse_error"
+
+
 def test_mid_file_bad_row_is_still_a_parse_error(authed, checking):
     data = (
         "Date,Description,Amount\n"
