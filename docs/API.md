@@ -59,8 +59,12 @@ security) moved to household members in v1.1. Migration creates member 1
 `ss_claim_age` nullable (children/non-earners). `ss_claim_age` 62–70; the
 benefit is adjusted from the FRA amount with standard actuarial factors
 (62→0.70 … 67→1.00 … 70→1.24, per-year linear steps; FRA fixed at 67).
-Exactly one `self` member must exist; it cannot be deleted.
-The simulation horizon runs to the latest life expectancy in the household.
+Exactly one `self` member must exist; it cannot be deleted (403
+`self_member_undeletable`; duplicate self → 409 `self_member_exists`; role
+change off self → 409 `self_role_immutable`).
+The simulation horizon runs to the latest life expectancy among **adult
+members** (roles `self|partner|other`); `child` members never extend the
+horizon (coordinator ruling 2026-07-11, flagged by both dev agents).
 Retirement-spending transition: household `annual_retirement_spending` takes
 over (and generic expenses stop) when the LAST member with a retirement_age
 retires; each member's own income stops at their own retirement age.
@@ -139,7 +143,10 @@ creates a snapshot dated today.
 ```
 
 `kind`: `essential|discretionary`. `annual_growth_pct` null → inflation
-assumption. Sim semantics: categories are expense streams (they stop at the
+assumption. On `PUT`, new categories omit `id` (server assigns); categories
+with ids are updated in place; omitted existing ids are deleted. Spending
+categories count as outflows in dashboard `monthly_surplus` (rulings
+2026-07-11). Sim semantics: categories are expense streams (they stop at the
 household retirement transition like other expenses); `monthly_savings_target`
 is informational for the UI (actual saving comes from contribution flows).
 **Double-count rule**: spending categories and `expense`-kind flows both count
