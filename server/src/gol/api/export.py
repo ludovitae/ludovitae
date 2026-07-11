@@ -30,8 +30,20 @@ from gol.db import Base
 router = APIRouter(tags=["export"])
 
 EXPORT_FORMAT = "gol-export"
-# columns whose *values* are secrets: exported as null, never the real value
-REDACTED_COLUMNS = {("ai_settings", "api_key")}
+# Columns whose *values* are secrets / credential material: exported as null,
+# never the real value. The table/column shape is unchanged (the key is still
+# present) — only the value is redacted, matching the ai_settings.api_key
+# precedent. These serve no restore purpose (restore is file-level in this
+# phase) and would otherwise widen the blast radius of a leaked export file:
+#   - ai_settings.api_key   — the AI provider secret
+#   - auth_credential.password_hash — argon2 hash, offline-crackable
+#   - auth_sessions.token_hash / csrf_token — live session/CSRF material
+REDACTED_COLUMNS = {
+    ("ai_settings", "api_key"),
+    ("auth_credential", "password_hash"),
+    ("auth_sessions", "token_hash"),
+    ("auth_sessions", "csrf_token"),
+}
 
 
 def _mappers_by_table() -> dict[str, Mapper]:
