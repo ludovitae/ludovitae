@@ -19,13 +19,12 @@ from alembic import command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import select, text
 
-from v1_fixture import N_PATHS, SEED, TODAY, V1_FIXTURE_SQL, apply_v1_fixture_sql
-
 from gol import config
 from gol.assembly import build_plan_inputs
 from gol.db import get_engine, reset_engine, session_factory
 from gol.models import HouseholdMember, SpendingCategory
 from gol.sim import run_simulation
+from v1_fixture import N_PATHS, SEED, TODAY, V1_FIXTURE_SQL, apply_v1_fixture_sql
 
 GOLDEN = json.loads(
     (pathlib.Path(__file__).parent / "fixtures" / "v1_identity_golden.json").read_text()

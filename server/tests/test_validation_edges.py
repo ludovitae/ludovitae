@@ -19,27 +19,37 @@ def _envelope(resp, status: int, code: str | None = None):
 # --- degenerate plan horizons (D-001) --------------------------------------
 
 
+def _self_id(authed) -> int:
+    return next(
+        m["id"] for m in authed.get("/api/v1/household").json() if m["role"] == "self"
+    )
+
+
 def test_life_expectancy_below_current_age_is_422_not_500(authed):
     """birth_year older than life_expectancy would crash the numpy engine."""
-    prof = authed.get("/api/v1/profile").json()
-    prof.update(birth_year=1900, life_expectancy=92)  # start_age ~126 > 92
-    assert authed.put("/api/v1/profile", json=prof).status_code == 200
+    resp = authed.patch(
+        f"/api/v1/household/{_self_id(authed)}",
+        json={"birth_year": 1900, "life_expectancy": 92},  # start_age ~126 > 92
+    )
+    assert resp.status_code == 200
     resp = authed.post("/api/v1/simulate", json={"scenario_id": 0, "n_paths": 50})
     _envelope(resp, 422, "invalid_plan_horizon")
 
 
 def test_future_birth_year_is_422_not_negative_ages(authed):
-    prof = authed.get("/api/v1/profile").json()
-    prof.update(birth_year=2050)  # negative current age
-    assert authed.put("/api/v1/profile", json=prof).status_code == 200
+    resp = authed.patch(
+        f"/api/v1/household/{_self_id(authed)}", json={"birth_year": 2050}
+    )
+    assert resp.status_code == 200
     resp = authed.post("/api/v1/simulate", json={"scenario_id": 0, "n_paths": 50})
     _envelope(resp, 422, "invalid_plan_horizon")
 
 
 def test_degenerate_horizon_also_guarded_in_compare(authed):
-    prof = authed.get("/api/v1/profile").json()
-    prof.update(birth_year=1900, life_expectancy=92)
-    authed.put("/api/v1/profile", json=prof)
+    authed.patch(
+        f"/api/v1/household/{_self_id(authed)}",
+        json={"birth_year": 1900, "life_expectancy": 92},
+    )
     resp = authed.post(
         "/api/v1/scenarios/compare", json={"scenario_ids": [0], "n_paths": 50}
     )

@@ -5,14 +5,13 @@ import datetime as dt
 
 def test_profile_roundtrip(authed):
     body = authed.get("/api/v1/profile").json()
+    # v1.1: household-level assumptions only; person fields live on /household
     assert set(body) == {
-        "birth_year", "retirement_age", "life_expectancy", "annual_retirement_spending",
-        "social_security_monthly", "social_security_start_age", "inflation_pct",
-        "effective_tax_rate_pct",
+        "annual_retirement_spending", "inflation_pct", "effective_tax_rate_pct",
     }
-    body.update(birth_year=1980, retirement_age=60, annual_retirement_spending=75_000.5)
+    body.update(annual_retirement_spending=75_000.5, inflation_pct=3.0)
     updated = authed.put("/api/v1/profile", json=body).json()
-    assert updated["retirement_age"] == 60
+    assert updated["inflation_pct"] == 3.0
     assert updated["annual_retirement_spending"] == 75_000.5
     assert authed.get("/api/v1/profile").json() == updated
 

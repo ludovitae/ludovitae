@@ -1,24 +1,40 @@
 """T-003 sim-engine edge cases: degenerate horizons, boundary demographics,
 and empty/all-debt households. These assert the engine and the /simulate API
 degrade gracefully — valid shapes or documented validation errors, never 500s.
+(Updated for the v1.1 members-based PlanInputs.)
 """
 
 from __future__ import annotations
 
 import pytest
 
-from gol.sim import FlowSpec, PlanInputs, run_simulation
+from gol.sim import FlowSpec, MemberSpec, PlanInputs, run_simulation
 
 PCTL_KEYS = {"p10", "p25", "p50", "p75", "p90"}
 DET_KEYS = {"net_worth", "invested", "cash", "property", "debt"}
 
 
-def _plan(**overrides) -> PlanInputs:
+def _plan(start_age: int = 46, retirement_age: int = 65, life_expectancy: int = 92,
+          **overrides) -> PlanInputs:
+    """Single-member plan mirroring how assembly maps ages onto the grid."""
+    horizon = (life_expectancy - start_age + 1) * 12
+    ret_raw = (retirement_age - start_age) * 12
+    ret = max(0, min(ret_raw, horizon))
+    member = MemberSpec(
+        id=1, name="Solo", age0_months=start_age * 12, life_end_month=horizon,
+        retirement_month=ret_raw,
+    )
     base = dict(
-        start_age=46, retirement_age=65, life_expectancy=92, start_year=2026,
+        start_age=start_age, start_year=2026, horizon_months=horizon,
+        retirement_month=ret, members=(member,),
     )
     base.update(overrides)
     return PlanInputs(**base)
+
+
+def _ret_month(start_age=46, retirement_age=65, life_expectancy=92) -> int:
+    horizon = (life_expectancy - start_age + 1) * 12
+    return max(0, min((retirement_age - start_age) * 12, horizon))
 
 
 def _assert_valid_shape(result: dict, expected_years: int) -> None:
@@ -47,6 +63,8 @@ def test_retirement_age_already_passed_at_start():
         n_paths=200, seed=7,
     )
     _assert_valid_shape(r, 47)
+    # a retirement years in the past is not a milestone
+    assert not any(m["kind"] == "retirement" for m in r["milestones"])
 
 
 def test_retirement_age_at_life_expectancy():
@@ -63,6 +81,8 @@ def test_retirement_age_beyond_life_expectancy():
         _plan(retirement_age=110, invested0=500_000), n_paths=200, seed=7
     )
     _assert_valid_shape(r, 47)
+    # beyond the horizon -> no retirement milestone either
+    assert not any(m["kind"] == "retirement" for m in r["milestones"])
 
 
 def test_start_age_equals_life_expectancy_single_year():
@@ -78,7 +98,7 @@ def test_zero_income_household():
     """No income flows: spending draws down assets; still a valid run."""
     r = run_simulation(
         _plan(cash0=20_000, invested0=100_000,
-              flows=(FlowSpec("expense", 4_000, stops_at_retirement=True),),
+              flows=(FlowSpec("expense", 4_000, end_month=_ret_month()),),
               annual_retirement_spending=50_000),
         n_paths=200, seed=3,
     )
@@ -99,11 +119,12 @@ def test_all_debt_household():
 
 def test_negative_net_worth_start_recoverable():
     """Debt exceeds assets at t0 but strong income can climb out."""
+    ret = _ret_month()
     r = run_simulation(
         _plan(cash0=10_000, invested0=50_000, debt0=200_000,
               flows=(
-                  FlowSpec("income", 15_000, stops_at_retirement=True),
-                  FlowSpec("expense", 4_000, stops_at_retirement=True),
+                  FlowSpec("income", 15_000, end_month=ret),
+                  FlowSpec("expense", 4_000, end_month=ret),
                   FlowSpec("contrib_debt", 5_000),
               )),
         n_paths=300, seed=11,
@@ -121,6 +142,18 @@ def test_empty_household_all_zero():
     )
     _assert_valid_shape(r, 47)
     assert r["success_probability"] == 0.0
+
+
+def test_no_members_at_all_is_still_valid():
+    """Engine-level degenerate case: an empty members tuple (assembly always
+    provides the self member, but the engine must not crash)."""
+    r = run_simulation(
+        PlanInputs(start_age=46, start_year=2026, horizon_months=12,
+                   retirement_month=12, invested0=10_000),
+        n_paths=50, seed=1,
+    )
+    _assert_valid_shape(r, 1)
+    assert r["milestones"] == []
 
 
 # --- events at/beyond life expectancy --------------------------------------

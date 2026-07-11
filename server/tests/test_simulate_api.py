@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 
-def _setup_plan(authed):
-    profile = authed.get("/api/v1/profile").json()
-    profile.update(birth_year=1980, retirement_age=65)
-    authed.put("/api/v1/profile", json=profile)
+def _setup_plan(authed) -> int:
+    """Basic plan; returns the self member id."""
+    self_id = next(
+        m["id"] for m in authed.get("/api/v1/household").json() if m["role"] == "self"
+    )
+    authed.patch(
+        f"/api/v1/household/{self_id}",
+        json={"name": "Brian", "birth_year": 1980, "retirement_age": 65,
+              "life_expectancy": 92, "ss_monthly_at_fra": 2_200.0,
+              "ss_claim_age": 67},
+    )
     authed.post(
         "/api/v1/accounts",
         json={"name": "Brokerage", "type": "brokerage", "balance": 400_000,
@@ -15,12 +22,13 @@ def _setup_plan(authed):
     authed.post(
         "/api/v1/flows",
         json={"name": "Salary", "kind": "income", "amount_monthly": 9_000,
-              "ends_at_retirement": True},
+              "member_id": self_id, "ends_at_retirement": True},
     )
     authed.post(
         "/api/v1/flows",
         json={"name": "Living", "kind": "expense", "amount_monthly": 5_000},
     )
+    return self_id
 
 
 def test_simulate_response_shape(authed):
@@ -36,6 +44,92 @@ def test_simulate_response_shape(authed):
     assert set(body["ending_net_worth"]) == {"p10", "p50", "p90"}
     assert 0.0 <= body["success_probability"] <= 1.0
     assert len(body["ages"]) == len(body["percentiles"]["p50"])
+    # v1.1: milestones on the self age axis, sorted by age
+    kinds = [(m["kind"], m["age"]) for m in body["milestones"]]
+    assert ("retirement", 65) in kinds
+    assert ("ss_start", 67) in kinds
+    labels = {m["kind"]: m["label"] for m in body["milestones"]}
+    assert labels["retirement"] == "Brian retires"
+    assert labels["ss_start"] == "Brian claims Social Security (100% of FRA)"
+    ages = [m["age"] for m in body["milestones"]]
+    assert ages == sorted(ages)
+
+
+def test_simulate_member_overrides_move_milestones(authed):
+    self_id = _setup_plan(authed)
+    partner_id = authed.post(
+        "/api/v1/household",
+        json={"name": "Dana", "role": "partner", "birth_year": 1983,
+              "life_expectancy": 94, "retirement_age": 67,
+              "ss_monthly_at_fra": 1_900.0, "ss_claim_age": 67},
+    ).json()["id"]
+    resp = authed.post(
+        "/api/v1/simulate",
+        json={"params": {
+            "retirement_age": 55,  # sugar for self
+            "member_overrides": {str(partner_id): {"retirement_age": 60,
+                                                    "ss_claim_age": 62}},
+        }, "seed": 9, "n_paths": 200},
+    )
+    assert resp.status_code == 200
+    ms = resp.json()["milestones"]
+    retire = {m["member_id"]: m["age"] for m in ms if m["kind"] == "retirement"}
+    # self retires at 55; Dana (3 years younger) retires at 60 -> self age 63
+    assert retire == {self_id: 55, partner_id: 63}
+    dana_ss = [m for m in ms if m["kind"] == "ss_start" and m["member_id"] == partner_id]
+    assert dana_ss[0]["label"] == "Dana claims Social Security (70% of FRA)"
+
+
+def test_simulate_spending_delta_pct_cuts_spending(authed):
+    _setup_plan(authed)
+    authed.put(
+        "/api/v1/spending",
+        json={"categories": [{"name": "Everything", "monthly_amount": 1_000.0,
+                              "kind": "essential"}],
+              "monthly_savings_target": 0},
+    )
+    base = authed.post(
+        "/api/v1/simulate", json={"scenario_id": 0, "seed": 4, "n_paths": 300}
+    ).json()
+    trimmed = authed.post(
+        "/api/v1/simulate",
+        json={"params": {"spending_delta_pct": -25.0}, "seed": 4, "n_paths": 300},
+    ).json()
+    boosted = authed.post(
+        "/api/v1/simulate",
+        json={"params": {"spending_delta_pct": 25.0}, "seed": 4, "n_paths": 300},
+    ).json()
+    assert (trimmed["ending_net_worth"]["p50"] > base["ending_net_worth"]["p50"]
+            > boosted["ending_net_worth"]["p50"])
+
+
+def test_scenario_member_overrides_validation(authed):
+    bad_key = authed.post(
+        "/api/v1/scenarios",
+        json={"name": "X", "params": {"member_overrides": {"dana": {"retirement_age": 60}}}},
+    )
+    assert bad_key.status_code == 422
+    bad_claim = authed.post(
+        "/api/v1/scenarios",
+        json={"name": "X", "params": {"member_overrides": {"2": {"ss_claim_age": 61}}}},
+    )
+    assert bad_claim.status_code == 422
+    bad_field = authed.post(
+        "/api/v1/scenarios",
+        json={"name": "X", "params": {"member_overrides": {"2": {"name": "Nope"}}}},
+    )
+    assert bad_field.status_code == 422
+    ok = authed.post(
+        "/api/v1/scenarios",
+        json={"name": "OK", "params": {
+            "member_overrides": {"2": {"retirement_age": 60, "ss_claim_age": 62}},
+            "spending_delta_pct": -10.0,
+        }},
+    )
+    assert ok.status_code == 201
+    assert ok.json()["params"]["member_overrides"] == {
+        "2": {"retirement_age": 60, "ss_claim_age": 62}
+    }
 
 
 def test_simulate_with_inline_params(authed):
@@ -95,3 +189,8 @@ def test_compare_shape_and_order(authed):
     assert results[1]["name"] == "Retire at 55"
     # earlier retirement should not beat the baseline on success probability
     assert results[1]["success_probability"] <= results[0]["success_probability"]
+    # each compare result carries its own milestone list
+    base_ret = [m for m in results[0]["milestones"] if m["kind"] == "retirement"]
+    scn_ret = [m for m in results[1]["milestones"] if m["kind"] == "retirement"]
+    assert base_ret[0]["age"] == 65
+    assert scn_ret[0]["age"] == 55

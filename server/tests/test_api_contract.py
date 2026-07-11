@@ -33,14 +33,15 @@ def _assert_shape(obj: dict, spec: dict, where: str) -> None:
 ACCOUNT_SPEC = {
     "id": int, "name": str, "type": str, "institution": (str, type(None)),
     "balance": Num, "growth_rate_pct": (int, float, type(None)),
-    "asset_class": (str, type(None)), "include_in_net_worth": bool,
-    "notes": str, "created_at": str,
+    "asset_class": (str, type(None)), "member_id": (int, type(None)),
+    "include_in_net_worth": bool, "notes": str, "created_at": str,
 }
 FLOW_SPEC = {
     "id": int, "name": str, "kind": str, "amount_monthly": Num,
     "annual_growth_pct": Num, "start_date": (str, type(None)),
     "end_date": (str, type(None)), "account_id": (int, type(None)),
-    "category": (str, type(None)), "ends_at_retirement": bool,
+    "category": (str, type(None)), "member_id": (int, type(None)),
+    "ends_at_retirement": bool,
 }
 GOAL_SPEC = {
     "id": int, "name": str, "emoji": (str, type(None)), "target_amount": Num,
@@ -48,10 +49,25 @@ GOAL_SPEC = {
     "notes": str,
 }
 PROFILE_SPEC = {
-    "birth_year": int, "retirement_age": int, "life_expectancy": int,
-    "annual_retirement_spending": Num, "social_security_monthly": Num,
-    "social_security_start_age": int, "inflation_pct": Num,
+    "annual_retirement_spending": Num, "inflation_pct": Num,
     "effective_tax_rate_pct": Num,
+}
+MEMBER_SPEC = {
+    "id": int, "name": str, "role": str, "birth_year": int,
+    "life_expectancy": int, "retirement_age": (int, type(None)),
+    "ss_monthly_at_fra": (int, float, type(None)),
+    "ss_claim_age": (int, type(None)), "notes": str,
+}
+SPENDING_CATEGORY_SPEC = {
+    "id": int, "name": str, "monthly_amount": Num, "kind": str,
+    "annual_growth_pct": (int, float, type(None)),
+}
+OBSERVED_SPEC = {
+    "months": int, "from": str, "to": str, "total_monthly_avg": Num,
+    "by_category": list,
+}
+MILESTONE_SPEC = {
+    "age": int, "year": int, "kind": str, "label": str, "member_id": int,
 }
 SCENARIO_SPEC = {
     "id": int, "name": str, "description": str, "is_baseline": bool, "params": dict,
@@ -60,7 +76,7 @@ SIM_SPEC = {
     "engine_version": str, "n_paths": int, "seed": int, "start_year": int,
     "ages": list, "deterministic": dict, "percentiles": dict,
     "success_probability": Num, "median_ruin_age": (int, float, type(None)),
-    "ending_net_worth": dict,
+    "ending_net_worth": dict, "milestones": list,
 }
 GOALS_SUMMARY_SPEC = {
     "id": int, "name": str, "emoji": (str, type(None)), "target_amount": Num,
@@ -81,6 +97,9 @@ def _assert_sim_shape(body: dict, where: str) -> None:
         assert len(series) == n
     for series in body["deterministic"].values():
         assert len(series) == n
+    for ms in body["milestones"]:
+        _assert_shape(ms, MILESTONE_SPEC, f"{where}.milestones[]")
+        assert ms["kind"] in ("retirement", "ss_start", "rmd_start")
 
 
 # --- auth (unauthenticated pre-conditions) ---------------------------------
@@ -120,10 +139,68 @@ def test_contract_walk_every_endpoint(authed):
     assert prof.status_code == 200
     _assert_shape(prof.json(), PROFILE_SPEC, "GET /profile")
     body = prof.json()
-    body.update(birth_year=1980, retirement_age=65)
+    body.update(annual_retirement_spending=80_000)
     put = authed.put("/api/v1/profile", json=body)
     assert put.status_code == 200
     _assert_shape(put.json(), PROFILE_SPEC, "PUT /profile")
+
+    # household GET(list, auto-self)/POST(201)/GET one/PATCH
+    hh = authed.get("/api/v1/household")
+    assert hh.status_code == 200
+    assert isinstance(hh.json(), list)
+    _assert_shape(hh.json()[0], MEMBER_SPEC, "GET /household[0]")
+    assert hh.json()[0]["role"] == "self"
+    self_id = hh.json()[0]["id"]
+    _assert_shape(
+        authed.patch(
+            f"/api/v1/household/{self_id}",
+            json={"name": "Brian", "birth_year": 1980, "retirement_age": 65},
+        ).json(),
+        MEMBER_SPEC, "PATCH /household/{id}",
+    )
+    partner = authed.post(
+        "/api/v1/household",
+        json={"name": "Dana", "role": "partner", "birth_year": 1983,
+              "life_expectancy": 94, "retirement_age": 67,
+              "ss_monthly_at_fra": 1900.0, "ss_claim_age": 65},
+    )
+    assert partner.status_code == 201
+    _assert_shape(partner.json(), MEMBER_SPEC, "POST /household")
+    partner_id = partner.json()["id"]
+    _assert_shape(
+        authed.get(f"/api/v1/household/{partner_id}").json(), MEMBER_SPEC,
+        "GET /household/{id}",
+    )
+
+    # spending GET/PUT + observed
+    sp = authed.get("/api/v1/spending")
+    assert sp.status_code == 200
+    assert set(sp.json()) == {"categories", "monthly_savings_target"}
+    for cat in sp.json()["categories"]:
+        _assert_shape(cat, SPENDING_CATEGORY_SPEC, "GET /spending.categories[]")
+    put_sp = authed.put(
+        "/api/v1/spending",
+        json={"categories": [
+            {"name": "Housing", "monthly_amount": 2500.0, "kind": "essential",
+             "annual_growth_pct": None},
+            {"name": "Dining out", "monthly_amount": 600.0, "kind": "discretionary"},
+        ], "monthly_savings_target": 1500.0},
+    )
+    assert put_sp.status_code == 200
+    assert set(put_sp.json()) == {"categories", "monthly_savings_target"}
+    assert len(put_sp.json()["categories"]) == 2
+    for cat in put_sp.json()["categories"]:
+        _assert_shape(cat, SPENDING_CATEGORY_SPEC, "PUT /spending.categories[]")
+
+    observed = authed.get("/api/v1/spending/observed?months=6")
+    assert observed.status_code == 200
+    _assert_shape(observed.json(), OBSERVED_SPEC, "GET /spending/observed")
+    assert observed.json()["months"] == 6
+    for row in observed.json()["by_category"]:
+        _assert_shape(
+            row, {"category": str, "monthly_avg": Num, "txn_count": int},
+            "observed.by_category[]",
+        )
 
     # accounts POST(201)/GET list/GET one/PATCH
     created = authed.post(
@@ -304,6 +381,7 @@ def test_contract_walk_every_endpoint(authed):
     )
 
     # deletes (204) — close out every mutating create
+    assert authed.delete(f"/api/v1/household/{partner_id}").status_code == 204
     assert authed.delete(f"/api/v1/scenarios/{scn_id}").status_code == 204
     assert authed.delete(f"/api/v1/goals/{goal_id}").status_code == 204
     assert authed.delete(f"/api/v1/flows/{flow_id}").status_code == 204
@@ -315,7 +393,8 @@ def test_contract_walk_every_endpoint(authed):
 
 
 def test_401_shape_on_every_unauthenticated_read(client):
-    for path in ("/profile", "/accounts", "/flows", "/goals", "/scenarios",
+    for path in ("/profile", "/household", "/spending", "/spending/observed",
+                 "/accounts", "/flows", "/goals", "/scenarios",
                  "/dashboard", "/settings", "/transactions"):
         resp = client.get(f"/api/v1{path}")
         assert resp.status_code == 401, path
