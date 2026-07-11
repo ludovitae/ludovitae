@@ -91,7 +91,7 @@ def test_pre_migration_backup_created_by_run_migrations(v1_db):
         assert "birth_year" in profile_cols
     # while the live DB moved to head
     with sqlite3.connect(config.db_path()) as conn:
-        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == ("0004",)
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == ("0005",)
 
 
 def test_pre_migration_backup_skips_fresh_and_at_head_dbs(data_dir):
@@ -197,7 +197,7 @@ def test_export_contains_every_table_with_matching_row_counts(authed):
         doc = resp.json()
 
         assert doc["format"] == "gol-export"
-        assert doc["schema_version"] == "0004"
+        assert doc["schema_version"] == "0005"
         assert doc["exported_at"].endswith("Z")
 
         assert set(doc["tables"]) == set(Base.metadata.tables)

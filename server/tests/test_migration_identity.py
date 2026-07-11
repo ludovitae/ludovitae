@@ -79,6 +79,13 @@ def test_migration_synthesizes_self_member(migrated_db):
     # ownership columns exist and are NULL for migrated rows
     owner = migrated_db.execute(text("SELECT member_id FROM accounts LIMIT 1")).scalar()
     assert owner is None
+    # T-012 (0005): the flat-tax override is KEPT for migrated profiles (only
+    # fresh profiles default to NULL/brackets) — this is what preserves the
+    # sim identity asserted below
+    rate = migrated_db.execute(
+        text("SELECT effective_tax_rate_pct FROM profile")
+    ).scalar()
+    assert rate == 18.0
 
 
 def test_migration_seeds_zero_amount_starter_category(migrated_db):

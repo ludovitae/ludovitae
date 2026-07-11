@@ -67,7 +67,13 @@ class Profile(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     annual_retirement_spending: Mapped[float] = mapped_column(Money, default=80000.0)
     inflation_pct: Mapped[float] = mapped_column(Float, default=2.5)
-    effective_tax_rate_pct: Mapped[float] = mapped_column(Float, default=18.0)
+    # Nullable flat-rate tax override (T-012 phase 2): a value runs the flat
+    # v1 engine path; NULL runs the bracket-aware model. Fresh profiles
+    # default to NULL (brackets); migration 0005 keeps existing values so
+    # upgraded databases simulate identically until the owner clears it.
+    effective_tax_rate_pct: Mapped[float | None] = mapped_column(
+        Float, nullable=True, default=None
+    )
     monthly_savings_target: Mapped[float] = mapped_column(Money, default=0.0)
 
 

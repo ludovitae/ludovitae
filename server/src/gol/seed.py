@@ -152,7 +152,8 @@ def seed(force: bool = False) -> None:
         profile = get_or_create_profile(db)
         profile.annual_retirement_spending = 80_000.0
         profile.inflation_pct = 2.5
-        profile.effective_tax_rate_pct = 18.0
+        # null = bracket-aware tax model (T-012 phase 2); fresh seeds use it
+        profile.effective_tax_rate_pct = None
         profile.monthly_savings_target = 2_100.0
         get_or_create_settings(db)
 

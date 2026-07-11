@@ -46,19 +46,29 @@ def _resolve_params(db: DbSession, scenario_id: int) -> dict:
 
 def _assumptions(inputs: PlanInputs) -> dict:
     """Model assumptions the simulation actually ran with (from the resolved
-    PlanInputs — scenario overrides included — never re-read from the DB)."""
+    PlanInputs — scenario overrides included — never re-read from the DB).
+
+    v1.2.2 (T-012 phase 2): `tax_model` names the tax path the run used.
+    Flat mode carries `effective_tax_rate_pct` + `ss_taxable_share` exactly
+    as before; bracket mode carries `filing_status` instead."""
     m = inputs.market
-    return {
+    out = {
         "market": {
             "stocks_mean_pct": m.stocks_mean_pct, "stocks_vol_pct": m.stocks_vol_pct,
             "bonds_mean_pct": m.bonds_mean_pct, "bonds_vol_pct": m.bonds_vol_pct,
             "cash_mean_pct": m.cash_mean_pct, "cash_vol_pct": m.cash_vol_pct,
         },
         "inflation_pct": inputs.inflation_mean_pct,
-        "effective_tax_rate_pct": inputs.effective_tax_rate_pct,
-        "ss_taxable_share": SS_TAXABLE_SHARE,
-        "engine_version": ENGINE_VERSION,
     }
+    if inputs.effective_tax_rate_pct is None:
+        out["tax_model"] = "brackets"
+        out["filing_status"] = inputs.filing_status
+    else:
+        out["tax_model"] = "flat"
+        out["effective_tax_rate_pct"] = inputs.effective_tax_rate_pct
+        out["ss_taxable_share"] = SS_TAXABLE_SHARE
+    out["engine_version"] = ENGINE_VERSION
+    return out
 
 
 def _run_cached(db: DbSession, params: dict, n_paths: int, seed: int) -> dict:
