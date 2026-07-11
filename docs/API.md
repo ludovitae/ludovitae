@@ -185,8 +185,14 @@ accounts within ±4 days auto-pair silently; near-misses become candidates.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/transfers/candidates` | `[{score, txns: [Transaction, Transaction]}]`, score 0–1 |
-| POST | `/transfers/pair` | `{transaction_ids: [a, b]}` → both legs updated |
-| DELETE | `/transfers/pair/{pair_id}` | unlink |
+| POST | `/transfers/pair` | `{transaction_ids: [a, b]}` → **200** with both updated legs `[Transaction, Transaction]` (link op, not resource creation) |
+| DELETE | `/transfers/pair/{pair_id}` | unlink **and tombstone**: that transaction pair is never auto-paired again (manual re-pair via POST still allowed and clears the tombstone). Ruling 2026-07-11. |
+
+`POST /transactions/categorize` returns `{"updated": n}`.
+`/categorize/suggest` includes unmatched payees with `"category": null`.
+`/spending/recurring` entries also carry `"amount_variability_pct"` (stddev/median of
+occurrence amounts × 100) so the UI can segment true subscriptions (low
+variability) from spending habits like groceries (rulings 2026-07-11).
 
 Category rules (applied on import, priority asc, first match wins):
 
