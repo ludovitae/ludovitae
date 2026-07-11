@@ -92,9 +92,19 @@ def get_db() -> Iterator[Session]:
 
 
 def run_migrations() -> None:
-    """Apply alembic migrations up to head against the configured database."""
+    """Apply alembic migrations up to head against the configured database.
+
+    T-010: a non-empty DB that is not already at head is backed up to
+    data/backups/ first, so a destructive migration never runs against the
+    only copy. The backup uses the sqlite3 backup API (consistent even if a
+    connection were open — none is: this runs before the app engine connects).
+    """
     from alembic import command
     from alembic.config import Config as AlembicConfig
+
+    from gol.backup import pre_migration_backup
+
+    pre_migration_backup()
 
     cfg = AlembicConfig()
     cfg.set_main_option("script_location", "gol:migrations")

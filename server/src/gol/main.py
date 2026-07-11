@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,10 +25,29 @@ from gol.errors import ApiError, install_error_handlers
 _DEFAULT_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
+async def _snapshot_loop() -> None:
+    """T-010: daily DB snapshot — once at startup, then every 24h.
+
+    safe_daily_snapshot never raises, so this task can only end by
+    cancellation at shutdown.
+    """
+    from gol.backup import safe_daily_snapshot
+
+    while True:
+        await asyncio.to_thread(safe_daily_snapshot)
+        await asyncio.sleep(24 * 60 * 60)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     run_migrations()
-    yield
+    snapshots = asyncio.create_task(_snapshot_loop())
+    try:
+        yield
+    finally:
+        snapshots.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await snapshots
 
 
 def create_app() -> FastAPI:
@@ -42,6 +63,7 @@ def create_app() -> FastAPI:
         accounts,
         ai_admin,
         dashboard,
+        export,
         flows,
         goals,
         household,
@@ -62,7 +84,7 @@ def create_app() -> FastAPI:
     for module in (
         profile, household, spending, spending_analytics, accounts, flows,
         goals, transactions, transfers, rules, scenarios, simulate, dashboard,
-        settings, ai_admin, importer,
+        settings, ai_admin, importer, export,
     ):
         app.include_router(module.router, prefix=prefix)
 

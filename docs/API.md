@@ -397,3 +397,15 @@ pct_funded}` — where `pct_funded` is server-computed (0 when target is 0);
 
 `GET /settings` / `PATCH /settings` → `{"theme": "fintech", "reduce_motion": false}`
 (`theme`: `fintech|game` — the A/B feature flag.)
+
+## Export & backups (v1.2b, T-010)
+
+`GET /export` (auth required) → 200 `application/json` with
+`Content-Disposition: attachment; filename="gol-export-<date>.json"`:
+`{"format": "gol-export", "schema_version": "<alembic head>",
+"exported_at": "<ISO-8601Z>", "tables": {<table>: [rows...]}}` — every ORM
+table (sorted; rows by PK), `alembic_version` excluded, money as dollars,
+`ai_settings[].api_key` always null. Restore is manual in this phase (README
+"Backups & restore"); `POST /import/restore` is deferred with the round-trip
+test that belongs to it. Backups: pre-migration (keep 5) + daily snapshots
+(keep 14) in `data/backups/`, 0600.
