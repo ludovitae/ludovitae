@@ -147,13 +147,19 @@ def test_bulk_manual_categorize_protected_from_rules(authed, account):
     assert missing.json()["error"]["code"] == "transaction_not_found"
 
 
-def test_uncategorized_filter(authed, account):
+def test_uncategorized_filter_excludes_transfer_pairs(authed, account):
     d = _date()
     _import_csv(authed, account["id"], [
         f"{d},-10.00,Categorized,stuff",
         f"{d},-11.00,Not Yet,",
+        f"{d},-500.00,Payment to Card,",
     ])
-    rows = authed.get(f"/api/v1/transactions?account_id={account['id']}&uncategorized=1").json()
+    card = authed.post("/api/v1/accounts", json={"name": "Card", "type": "credit_card"}).json()
+    _import_csv(authed, card["id"], [f"{d},500.00,PAYMENT THANK YOU,"])  # auto-pairs
+
+    rows = authed.get("/api/v1/transactions?uncategorized=1").json()
+    # paired transfers are uncategorized but not awaiting categorization
+    # (ruling 2026-07-11)
     assert [t["payee"] for t in rows] == ["Not Yet"]
 
 

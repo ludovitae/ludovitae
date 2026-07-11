@@ -243,6 +243,24 @@ class AiUsage(Base):
     est_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
 
 
+class TransferPairTombstone(Base):
+    """A user-unpaired transaction pair (coordinator ruling 2026-07-11):
+    auto-pairing must never re-link these two transactions. Manual
+    POST /transfers/pair on the same two ids clears the tombstone.
+    Always stored with txn_id_a < txn_id_b."""
+
+    __tablename__ = "transfer_pair_tombstones"
+    __table_args__ = (UniqueConstraint("txn_id_a", "txn_id_b", name="uq_tombstone_pair"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    txn_id_a: Mapped[int] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), index=True
+    )
+    txn_id_b: Mapped[int] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), index=True
+    )
+
+
 class Scenario(Base):
     __tablename__ = "scenarios"
 

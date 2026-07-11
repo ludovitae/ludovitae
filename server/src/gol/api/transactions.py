@@ -46,7 +46,10 @@ def list_transactions(
     if to is not None:
         query = query.where(Transaction.date <= parse_date(to, "to"))
     if uncategorized:
+        # paired transfers are not spending, so they are not "waiting to be
+        # categorized" either (ruling 2026-07-11)
         query = query.where(Transaction.category.is_(None))
+        query = query.where(Transaction.transfer_pair_id.is_(None))
     rows = db.execute(query.limit(limit)).scalars().all()
     return [serialize_txn(t) for t in rows]
 

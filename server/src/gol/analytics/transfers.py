@@ -56,11 +56,19 @@ def _eligible(a: TxnRef, b: TxnRef, window_days: int, exact: bool) -> bool:
     return abs(ca + cb) / max(abs(ca), abs(cb)) <= CANDIDATE_AMOUNT_TOLERANCE
 
 
-def auto_pair(txns: list[TxnRef]) -> list[tuple[int, int]]:
+def pair_key(id_a: int, id_b: int) -> tuple[int, int]:
+    return (min(id_a, id_b), max(id_a, id_b))
+
+
+def auto_pair(
+    txns: list[TxnRef], blocked: frozenset[tuple[int, int]] = frozenset()
+) -> list[tuple[int, int]]:
     """Confident matches among *unpaired* transactions.
 
     Returns (id_a, id_b) tuples with id_a < id_b; each transaction appears in
-    at most one pair. Greedy oldest-first (date, then id).
+    at most one pair. Greedy oldest-first (date, then id). `blocked` holds
+    (min_id, max_id) tombstones for user-unpaired pairs, which must never be
+    auto-relinked (coordinator ruling 2026-07-11).
     """
     ordered = sorted(txns, key=lambda t: (t.date, t.id))
     used: set[int] = set()
@@ -74,6 +82,8 @@ def auto_pair(txns: list[TxnRef]) -> list[tuple[int, int]]:
                 continue
             if (other.date - txn.date).days > AUTO_PAIR_WINDOW_DAYS:
                 break  # sorted by date: nothing further can match
+            if pair_key(txn.id, other.id) in blocked:
+                continue
             if not _eligible(txn, other, AUTO_PAIR_WINDOW_DAYS, exact=True):
                 continue
             if best is None or (
@@ -98,13 +108,15 @@ def score(a: TxnRef, b: TxnRef) -> float:
     return round(_AMOUNT_WEIGHT * amount_closeness + _DATE_WEIGHT * date_closeness, 3)
 
 
-def candidates(txns: list[TxnRef]) -> list[tuple[float, TxnRef, TxnRef]]:
+def candidates(
+    txns: list[TxnRef], blocked: frozenset[tuple[int, int]] = frozenset()
+) -> list[tuple[float, TxnRef, TxnRef]]:
     """Scored near-miss pairs among *unpaired* transactions.
 
     Near-miss = cross-account, opposite sign, amount within 1% and within
-    ±7 days (the auto-pair criteria with both bounds relaxed). Pairs that
-    meet the strict auto-pair criteria are also included (score-topped):
-    they only exist here if a user explicitly unpaired them.
+    ±7 days (the auto-pair criteria with both bounds relaxed). Tombstoned
+    (user-unpaired) pairs are excluded — the user already said "not a
+    transfer"; re-linking one is manual POST /transfers/pair only.
 
     Each transaction appears in at most one candidate; assignment is greedy
     by descending score, ties broken by (id_a, id_b). Result is sorted by
@@ -116,6 +128,8 @@ def candidates(txns: list[TxnRef]) -> list[tuple[float, TxnRef, TxnRef]]:
         for other in ordered[i + 1 :]:
             if (other.date - txn.date).days > CANDIDATE_WINDOW_DAYS:
                 break
+            if pair_key(txn.id, other.id) in blocked:
+                continue
             if _eligible(txn, other, CANDIDATE_WINDOW_DAYS, exact=False):
                 first, second = (txn, other) if txn.id < other.id else (other, txn)
                 scored.append((score(first, second), first, second))

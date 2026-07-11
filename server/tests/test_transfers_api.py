@@ -112,8 +112,102 @@ def test_near_miss_becomes_scored_candidate_and_manual_pair_roundtrip(authed, ac
 
     resp = authed.delete(f"/api/v1/transfers/pair/{ids[0]}")
     assert resp.status_code == 204
-    assert len(authed.get("/api/v1/transfers/candidates").json()) == 1
+    # unpair tombstones the pair (ruling 2026-07-11): it does NOT return to
+    # the candidates queue — re-linking is manual POST only
+    assert authed.get("/api/v1/transfers/candidates").json() == []
     assert authed.delete(f"/api/v1/transfers/pair/{ids[0]}").status_code == 404
+
+    # manual re-pair is still allowed and clears the tombstone
+    repaired = authed.post("/api/v1/transfers/pair", json={"transaction_ids": ids})
+    assert repaired.status_code == 200
+    assert all(t["transfer_pair_id"] == ids[0] for t in repaired.json())
+
+
+def test_unpair_tombstone_survives_reimport(authed, accounts):
+    """Coordinator ruling regression: import → auto-pair → unpair →
+    re-import the same files → the pair must NOT come back."""
+    checking, card = accounts
+    pay_date = _shift_month(-1)
+    chk_rows = [f"{pay_date},-750.00,Payment to Card,"]
+    card_rows = [f"{pay_date + dt.timedelta(days=1)},750.00,PAYMENT THANK YOU,"]
+    _import_csv(authed, checking["id"], chk_rows)
+    _import_csv(authed, card["id"], card_rows)
+
+    (chk_txn,) = _txns(authed, checking["id"])
+    pair_id = chk_txn["transfer_pair_id"]
+    assert pair_id is not None  # auto-paired
+    assert authed.delete(f"/api/v1/transfers/pair/{pair_id}").status_code == 204
+
+    again_chk = _import_csv(authed, checking["id"], chk_rows)
+    again_card = _import_csv(authed, card["id"], card_rows)
+    assert again_chk == {"imported": 0, "skipped_duplicates": 1}
+    assert again_card == {"imported": 0, "skipped_duplicates": 1}
+    for txn in _txns(authed, checking["id"]) + _txns(authed, card["id"]):
+        assert txn["transfer_pair_id"] is None  # tombstone held
+    # and it is not resurfaced for review either
+    assert authed.get("/api/v1/transfers/candidates").json() == []
+
+    # manual re-pair clears the tombstone; the next import keeps the pair
+    ids = sorted(t["id"] for t in _txns(authed, checking["id"]) + _txns(authed, card["id"]))
+    assert authed.post(
+        "/api/v1/transfers/pair", json={"transaction_ids": ids}
+    ).status_code == 200
+    _import_csv(authed, checking["id"], chk_rows)
+    (chk_txn,) = _txns(authed, checking["id"])
+    assert chk_txn["transfer_pair_id"] == ids[0]
+
+
+def test_dismiss_candidate_tombstones_across_reimports(authed, accounts):
+    """Ruling 2026-07-11: dismissed candidates never resurface; manual pair
+    still allowed and clears the dismissal."""
+    checking, card = accounts
+    date = _shift_month(-1)
+    chk_rows = [f"{date},-1000.00,Payment out,"]
+    card_rows = [f"{date},995.00,Payment in,"]  # 0.5% near-miss
+    _import_csv(authed, checking["id"], chk_rows)
+    _import_csv(authed, card["id"], card_rows)
+    (cand,) = authed.get("/api/v1/transfers/candidates").json()
+    ids = sorted(t["id"] for t in cand["txns"])
+
+    resp = authed.post(
+        "/api/v1/transfers/candidates/dismiss", json={"transaction_ids": ids}
+    )
+    assert resp.status_code == 204
+    assert authed.get("/api/v1/transfers/candidates").json() == []
+
+    # re-import both files: rows dedupe, the dismissal holds
+    _import_csv(authed, checking["id"], chk_rows)
+    _import_csv(authed, card["id"], card_rows)
+    assert authed.get("/api/v1/transfers/candidates").json() == []
+    for txn in _txns(authed, checking["id"]) + _txns(authed, card["id"]):
+        assert txn["transfer_pair_id"] is None
+
+    # manual pair overrides and clears the dismissal
+    paired = authed.post("/api/v1/transfers/pair", json={"transaction_ids": ids})
+    assert paired.status_code == 200
+    assert all(t["transfer_pair_id"] == ids[0] for t in paired.json())
+
+
+def test_dismiss_validation(authed, accounts):
+    checking, card = accounts
+    date = _shift_month(-1)
+    _import_csv(authed, checking["id"], [f"{date},-300.00,Payment out,"])
+    _import_csv(authed, card["id"], [f"{date},300.00,Payment in,"])  # auto-pairs
+    ids = sorted(
+        t["id"] for t in _txns(authed, checking["id"]) + _txns(authed, card["id"])
+    )
+    paired = authed.post(
+        "/api/v1/transfers/candidates/dismiss", json={"transaction_ids": ids}
+    )
+    assert paired.status_code == 409  # already paired — nothing to dismiss
+    missing = authed.post(
+        "/api/v1/transfers/candidates/dismiss", json={"transaction_ids": [ids[0], 99999]}
+    )
+    assert missing.status_code == 404
+    same = authed.post(
+        "/api/v1/transfers/candidates/dismiss", json={"transaction_ids": [ids[0], ids[0]]}
+    )
+    assert same.status_code == 422
 
 
 def test_pair_validation_errors(authed, accounts):

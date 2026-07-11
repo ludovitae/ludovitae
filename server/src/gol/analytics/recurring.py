@@ -60,7 +60,11 @@ class RecurringCharge:
     occurrences: int
     active: bool
     monthly_equivalent: float
-    amounts: tuple[float, ...]  # chronological; lets callers assess variance
+    # population stdev / median of occurrence amounts × 100, rounded 1dp
+    # (coordinator ruling 2026-07-11: lets the UI segment true subscriptions
+    # from steady habits like weekly groceries)
+    amount_variability_pct: float
+    amounts: tuple[float, ...]  # chronological; kept for callers/QA
 
 
 def _pick_cadence(gaps: list[int]) -> str | None:
@@ -127,16 +131,11 @@ def detect_recurring(occurrences: list[Occurrence], today: dt.date) -> list[Recu
                 occurrences=len(occs),
                 active=(today - occs[-1].date).days <= ACTIVE_CADENCE_FACTOR * cadence_days,
                 monthly_equivalent=round(last * MONTHLY_FACTOR[cadence], 2),
+                amount_variability_pct=round(
+                    statistics.pstdev(amounts) / typical * 100.0, 1
+                ),
                 amounts=tuple(amounts),
             )
         )
     charges.sort(key=lambda c: (-c.monthly_equivalent, c.key))
     return charges
-
-
-def relative_stdev(amounts: tuple[float, ...]) -> float:
-    """Population stdev / mean — the low-variance test for possibly_forgotten."""
-    mean = statistics.fmean(amounts)
-    if mean == 0:
-        return 0.0
-    return statistics.pstdev(amounts) / mean

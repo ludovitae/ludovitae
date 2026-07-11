@@ -10,7 +10,6 @@ from gol.analytics.recurring import (
     Occurrence,
     detect_recurring,
     normalize_payee,
-    relative_stdev,
 )
 from gol.analytics.transfers import TxnRef, auto_pair, candidates, score
 
@@ -81,6 +80,20 @@ def test_candidate_score_bounds():
     assert 0.0 <= score(a, _t(3, 2, D(2026, 6, 8), 101.0)) <= 1.0
 
 
+def test_blocked_pairs_never_auto_pair_or_surface_as_candidates():
+    """Tombstoned (user-unpaired) pairs are skipped by both matchers."""
+    txns = [
+        _t(1, 1, D(2026, 6, 1), -1200.0),
+        _t(2, 2, D(2026, 6, 3), 1200.0),
+    ]
+    blocked = frozenset({(1, 2)})
+    assert auto_pair(txns, blocked=blocked) == []
+    assert candidates(txns, blocked=blocked) == []
+    # a different counterpart is still fair game
+    txns.append(_t(3, 3, D(2026, 6, 2), 1200.0))
+    assert auto_pair(txns, blocked=blocked) == [(1, 3)]
+
+
 def test_candidates_out_of_tolerance_excluded():
     assert candidates([
         _t(1, 1, D(2026, 6, 1), -100.0),
@@ -131,6 +144,8 @@ def test_detect_monthly_with_price_change():
     assert charge.active is True
     assert charge.monthly_equivalent == 17.99
     assert charge.category == "subscriptions"
+    # pstdev([15.49]*15 + [17.99]*3) / median 15.49 * 100
+    assert charge.amount_variability_pct == 6.0
 
 
 def test_detect_weekly_and_annual_cadences_with_monthly_equivalent():
@@ -173,9 +188,9 @@ def test_gap_tolerance_allows_calendar_month_wobble():
     assert charge.cadence == "monthly"
 
 
-def test_relative_stdev():
-    assert relative_stdev((10.0, 10.0, 10.0)) == 0.0
-    assert relative_stdev((10.0, 20.0)) > 0.3
+def test_amount_variability_zero_for_flat_charges():
+    (charge,) = detect_recurring(_monthly("Flat", [9.99] * 6), D(2026, 7, 1))
+    assert charge.amount_variability_pct == 0.0
 
 
 # --- heuristic categorizer -----------------------------------------------------

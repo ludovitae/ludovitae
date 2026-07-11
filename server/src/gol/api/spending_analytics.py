@@ -27,7 +27,6 @@ from gol.analytics.recurring import (
     RecurringCharge,
     detect_recurring,
     normalize_payee,
-    relative_stdev,
 )
 from gol.api.common import Db, iso, parse_date
 from gol.auth.deps import Authenticated
@@ -43,8 +42,9 @@ TRANSFER_CATEGORY = "transfer"  # v1.1 fallback exclusion (see module docstring)
 SPIKE_MIN_DELTA_PCT = 20.0  # category_spikes: recent >= baseline * 1.2
 SPIKE_MIN_BASELINE = 20.0  # ...and baseline >= $20/mo (noise floor)
 PRICE_INCREASE_MIN_PCT = 5.0  # price_increases: hikes >= 5%
-FORGOTTEN_MAX_REL_STDEV = 0.05  # possibly_forgotten: amount stdev/mean <= 5%
+FORGOTTEN_MAX_VARIABILITY_PCT = 5.0  # possibly_forgotten: stdev/median <= 5%
 FORGOTTEN_MIN_DAYS = 365  # ...running >= 12 months
+FORGOTTEN_MAX_MONTHLY_EQ = 100.0  # ...and subscription-scale (ruling: no mortgages)
 TOP_MERCHANTS = 10
 FORECAST_LOOKBACK_MONTHS = 6  # trailing window for the variable average
 
@@ -160,6 +160,7 @@ def _serialize_charge(charge: RecurringCharge) -> dict:
         "occurrences": charge.occurrences,
         "active": charge.active,
         "monthly_equivalent": charge.monthly_equivalent,
+        "amount_variability_pct": charge.amount_variability_pct,
     }
 
 
@@ -231,7 +232,8 @@ def spending_hotspots(db: Db, _: Authenticated, months: int = Query(default=6, g
         _serialize_charge(c) for c in charges
         if c.active
         and (today - c.first_seen).days >= FORGOTTEN_MIN_DAYS
-        and relative_stdev(c.amounts) <= FORGOTTEN_MAX_REL_STDEV
+        and c.amount_variability_pct <= FORGOTTEN_MAX_VARIABILITY_PCT
+        and c.monthly_equivalent <= FORGOTTEN_MAX_MONTHLY_EQ
     ]
     return {
         "category_spikes": spikes,

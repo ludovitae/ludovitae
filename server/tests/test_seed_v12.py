@@ -43,8 +43,13 @@ def test_seeded_recurring_finds_subscriptions(seeded):
     charges = {c["payee"]: c for c in seeded.get("/api/v1/spending/recurring").json()}
     assert charges["NETFLIX.COM"]["cadence"] == "monthly"
     assert charges["NETFLIX.COM"]["price_change_pct"] == 16.1
+    assert charges["NETFLIX.COM"]["amount_variability_pct"] == 6.6
     assert charges["Spotify USA"]["cadence"] == "monthly"
     assert charges["Spotify USA"]["price_change_pct"] == 0.0
+    assert charges["Spotify USA"]["amount_variability_pct"] == 0.0
+    # segmentation intent of the ruling: steady habits carry higher
+    # variability than flat subscriptions
+    assert charges["Green Basket Market"]["amount_variability_pct"] > 5.0
     assert charges["StreamCo"]["cadence"] == "monthly"  # uncategorized on purpose
     assert charges["DomainHost Renewal"]["cadence"] == "annual"
     assert all(charges[p]["active"] for p in

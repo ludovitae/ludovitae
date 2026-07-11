@@ -55,7 +55,7 @@ RECURRING_SPEC = {
     "payee": str, "category": (str, type(None)), "cadence": str,
     "typical_amount": Num, "last_amount": Num, "price_change_pct": Num,
     "last_date": str, "first_seen": str, "occurrences": int, "active": bool,
-    "monthly_equivalent": Num,
+    "monthly_equivalent": Num, "amount_variability_pct": Num,
 }
 AI_SETTINGS_SPEC = {
     "has_api_key": bool, "api_key_last4": (str, type(None)), "enabled": bool,
@@ -355,6 +355,11 @@ def test_contract_walk_every_endpoint(authed):
     _assert_shape(bulk.json(), {"updated": int}, "POST /transactions/categorize")
     assert isinstance(authed.get("/api/v1/transactions?uncategorized=1").json(), list)
 
+    dismiss = authed.post(
+        "/api/v1/transfers/candidates/dismiss", json={"transaction_ids": txn_ids[:2]},
+    )
+    assert dismiss.status_code == 204
+
     rule = authed.post(
         "/api/v1/rules",
         json={"pattern": "coffee", "category": "dining", "priority": 5},
@@ -403,6 +408,8 @@ def test_contract_walk_every_endpoint(authed):
     assert ai.status_code == 200
     _assert_shape(ai.json(), AI_SETTINGS_SPEC, "GET /settings/ai")
     assert set(ai.json()["tokens_this_month"]) == {"input", "output"}
+    # ruling 2026-07-11: last4 is null (not "" or "none") before a key exists
+    assert ai.json()["api_key_last4"] is None
     put_ai = authed.put(
         "/api/v1/settings/ai",
         json={"api_key": "sk-ant-test-1234x7Q2", "enabled": True, "monthly_budget_usd": 5.0},

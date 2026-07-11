@@ -101,10 +101,13 @@ def test_recurring_endpoint_detects_subscriptions_and_price_change(authed, accou
     assert netflix["occurrences"] == 13
     assert netflix["active"] is True
     assert netflix["monthly_equivalent"] == 17.99
+    # pstdev([15.49]*10 + [17.99]*3) / median 15.49 * 100 (ruling 2026-07-11)
+    assert netflix["amount_variability_pct"] == 6.8
 
     spotify = charges["Spotify USA"]
     assert spotify["cadence"] == "monthly"
     assert spotify["price_change_pct"] == 0.0
+    assert spotify["amount_variability_pct"] == 0.0
 
     assert "Random Shop" not in charges  # 2 occurrences, irregular
     # sorted by monthly_equivalent desc: groceries (100) first
@@ -145,6 +148,24 @@ def test_hotspots_spikes_merchants_price_increases_forgotten(authed, accounts):
     forgotten = [c["payee"] for c in body["possibly_forgotten"]]
     assert "Spotify USA" in forgotten  # flat, active, running 14 months
     assert "NETFLIX.COM" not in forgotten  # price hike -> variance above 5%
+
+
+def test_possibly_forgotten_caps_at_subscription_scale(authed, accounts):
+    """Ruling 2026-07-11: monthly_equivalent <= 100 — flat long-running
+    mortgages/rent are not 'possibly forgotten'."""
+    checking, _card = accounts
+    rows = [f"{_shift_month(-m, 2)},-1800.00,Big Rent Co,housing"
+            for m in range(14, 0, -1)]
+    rows += [f"{_shift_month(-m, 25)},-9.99,Spotify USA," for m in range(14, 0, -1)]
+    _import_csv(authed, checking["id"], rows)
+
+    body = authed.get("/api/v1/spending/hotspots").json()
+    forgotten = [c["payee"] for c in body["possibly_forgotten"]]
+    assert forgotten == ["Spotify USA"]  # flat + old + subscription-scale
+    # the rent is still detected as recurring — the cap only gates the
+    # forgotten heuristic
+    recurring = [c["payee"] for c in authed.get("/api/v1/spending/recurring").json()]
+    assert "Big Rent Co" in recurring
 
 
 def test_forecast_recurring_plus_variable(authed, accounts):
