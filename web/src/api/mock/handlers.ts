@@ -4,6 +4,8 @@
 import { ApiError } from '../client'
 import type {
   Account,
+  AccountGroup,
+  AccountMap,
   AiSettings,
   AiSettingsUpdate,
   AiUsageMonth,
@@ -15,7 +17,10 @@ import type {
   Flow,
   Goal,
   HouseholdMember,
+  ImportAccountResult,
+  ImportCommitResult,
   ImportPreview,
+  NewAccountPayload,
   ObservedSpending,
   Scenario,
   ScenarioParams,
@@ -156,8 +161,10 @@ function observedSpending(monthsRaw: number): ObservedSpending {
 
   const sums = new Map<string, { total: number; count: number }>()
   for (const t of db.transactions) {
-    // v1.2: transfer-paired transactions are excluded from ALL analytics
+    // v1.2: transfer-paired transactions are excluded from ALL analytics;
+    // #26: investment-activity rows likewise (reinvestments are not spending)
     if (t.transfer_pair_id !== null) continue
+    if (t.category === INVESTMENT_ACTIVITY_CATEGORY) continue
     if (t.amount >= 0 || t.date < from || t.date > to) continue
     const key = t.category.trim() || 'uncategorized'
     const cur = sums.get(key) ?? { total: 0, count: 0 }
@@ -184,39 +191,58 @@ function observedSpending(monthsRaw: number): ObservedSpending {
 
 /* ------------------------------- import --------------------------------- */
 
-function splitCsvLine(line: string): string[] {
-  const out: string[] = []
+/** Full-stream CSV parser (#26): quoted fields may contain commas, escaped
+ * quotes ("") and EMBEDDED NEWLINES (real Amex exports) — nothing may split
+ * on physical lines first. Blank rows drop; leading non-CSV preamble rows
+ * (fewer than 2 non-empty cells) drop so the header is the first row. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
   let cur = ''
   let inQ = false
-  for (const ch of line) {
-    if (ch === '"') inQ = !inQ
-    else if (ch === ',' && !inQ) {
-      out.push(cur.trim())
-      cur = ''
+  const endCell = () => {
+    row.push(cur.trim())
+    cur = ''
+  }
+  const endRow = () => {
+    endCell()
+    if (row.some((c) => c)) rows.push(row)
+    row = []
+  }
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          cur += '"'
+          i++
+        } else inQ = false
+      } else cur += ch
+    } else if (ch === '"') inQ = true
+    else if (ch === ',') endCell()
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++
+      endRow()
     } else cur += ch
   }
-  out.push(cur.trim())
-  return out
-}
-
-/** Mock header fingerprint (v1.2.2, T-009). The real server uses sha256 of
- * the lowercased, sorted, comma-joined headers; the mock only needs the same
- * *identity* semantics, so a cheap deterministic hash of that material. */
-function fingerprintOf(columns: string[]): string {
-  const material = columns.map((c) => c.trim().toLowerCase()).sort().join(',')
-  let h = 2166136261
-  for (let i = 0; i < material.length; i++) {
-    h ^= material.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return (h >>> 0).toString(16).padStart(8, '0')
+  endRow()
+  const start = rows.findIndex((r) => r.filter((c) => c).length >= 2)
+  return start > 0 ? rows.slice(start) : rows
 }
 
 const SIGN_HINT_TYPES = ['credit_card', 'loan', 'mortgage']
 
-function suggestedMapping(columns: string[]): Partial<CsvMapping> {
+function suggestedMapping(columns: string[], dataRows: string[][]): Partial<CsvMapping> {
+  // #26: never propose a fully-empty column for any role
+  const usable = columns.filter((_, i) => dataRows.some((r) => (r[i] ?? '').trim()))
   const suggested: Partial<CsvMapping> = {}
-  for (const col of columns) {
+  const exact = (name: string) => usable.find((c) => c.trim().toLowerCase() === name)
+  // Fidelity-style "Action" is the payee; Citi-style "Status" marks pending
+  const action = exact('action')
+  if (action) suggested.payee = action
+  const status = exact('status')
+  if (status) suggested.status_column = status
+  for (const col of usable) {
     const c = col.toLowerCase()
     if (!suggested.date && /date|posted/.test(c)) suggested.date = col
     else if (!suggested.amount && /amount|amt|value/.test(c)) suggested.amount = col
@@ -226,11 +252,23 @@ function suggestedMapping(columns: string[]): Partial<CsvMapping> {
   if (!suggested.amount) {
     // v1.2.2: split debit/credit columns (a column matching both — e.g.
     // "Debit/Credit" — would be a single amount column, handled above)
-    const debit = columns.find((c) => /debit|withdrawal|money out|charge/.test(c.toLowerCase()) && !/credit|deposit|money in/.test(c.toLowerCase()))
-    const credit = columns.find((c) => /credit|deposit|money in/.test(c.toLowerCase()) && !/debit|withdrawal|money out|charge/.test(c.toLowerCase()))
+    const debit = usable.find((c) => /debit|withdrawal|money out|charge/.test(c.toLowerCase()) && !/credit|deposit|money in/.test(c.toLowerCase()))
+    const credit = usable.find((c) => /credit|deposit|money in/.test(c.toLowerCase()) && !/debit|withdrawal|money out|charge/.test(c.toLowerCase()))
     if (debit && credit) {
       suggested.debit = debit
       suggested.credit = credit
+    }
+  }
+  // #26 multi-account detection: an account-number-ish column whose values
+  // repeat across rows with more than one distinct value
+  const idCol = usable.find((c) => /account number|account no|account #|acct number|account id/.test(c.toLowerCase()))
+  if (idCol) {
+    const i = columns.indexOf(idCol)
+    const values = new Set(dataRows.map((r) => (r[i] ?? '').trim()).filter(Boolean))
+    if (values.size > 1 && values.size < dataRows.length) {
+      suggested.account_id_column = idCol
+      const nameCol = usable.find((c) => c.trim().toLowerCase() === 'account' || /account name/.test(c.toLowerCase()))
+      if (nameCol) suggested.account_column = nameCol
     }
   }
   return suggested
@@ -246,11 +284,67 @@ function rowAmount(cells: string[], columns: string[], mapping: Partial<CsvMappi
     const debit = num(cells[idx(mapping.debit)] ?? '')
     const credit = num(cells[idx(mapping.credit)] ?? '')
     if (debit === null && credit === null) return null
-    // debit = outflow (negative), credit = inflow (positive)
-    return (credit ?? 0) - Math.abs(debit ?? 0)
+    // #26 role-based signs: each side is an ABSOLUTE value — debit = outflow,
+    // credit = inflow (Citi lists credits already negative)
+    return Math.abs(credit ?? 0) - Math.abs(debit ?? 0)
   }
   const v = num(cells[idx(mapping.amount)] ?? '')
   return v !== null && Number.isFinite(v) ? v : null
+}
+
+/** #26: collapse consecutive whitespace — padded exports fragment analytics. */
+function normalizePayee(raw: string): string {
+  return raw.replace(/\s+/g, ' ').trim()
+}
+
+function isPending(cells: string[], columns: string[], mapping: Partial<CsvMapping>): boolean {
+  if (!mapping.status_column) return false
+  const i = columns.indexOf(mapping.status_column)
+  return i >= 0 && (cells[i] ?? '').trim().toLowerCase() === 'pending'
+}
+
+const INVESTMENT_TYPES = ['brokerage', 'retirement', 'hsa']
+export const INVESTMENT_ACTIVITY_CATEGORY = 'investment-activity'
+
+/** #26: served last_account_id is a loose reference — null once the account
+ * it names is gone. */
+function liveLastAccountId(preset: { last_account_id: number | null }): number | null {
+  if (preset.last_account_id === null) return null
+  return db.accounts.some((a) => a.id === preset.last_account_id)
+    ? preset.last_account_id
+    : null
+}
+
+function accountGroups(
+  columns: string[],
+  dataRows: string[][],
+  mapping: Partial<CsvMapping>,
+): AccountGroup[] | null {
+  if (!mapping.account_id_column) return null
+  const idIdx = columns.indexOf(mapping.account_id_column)
+  const nameIdx = mapping.account_column ? columns.indexOf(mapping.account_column) : -1
+  const groups = new Map<string, AccountGroup>()
+  for (const cells of dataRows) {
+    if (isPending(cells, columns, mapping)) continue
+    const raw = (cells[idIdx] ?? '').trim()
+    if (!raw) continue
+    const key = db.externalIdHash(raw)
+    const existing = groups.get(key)
+    if (existing) {
+      existing.rows += 1
+      if (!existing.name && nameIdx >= 0) existing.name = (cells[nameIdx] ?? '').trim() || null
+    } else {
+      groups.set(key, {
+        key,
+        number_masked: `···${raw.slice(-4)}`,
+        name: nameIdx >= 0 ? (cells[nameIdx] ?? '').trim() || null : null,
+        rows: 1,
+        account_id: db.externalLinks.get(key) ?? null,
+      })
+    }
+  }
+  const out = [...groups.values()]
+  return out.length > 0 ? out : null
 }
 
 async function importPreview(form: FormData): Promise<ImportPreview> {
@@ -261,40 +355,58 @@ async function importPreview(form: FormData): Promise<ImportPreview> {
   if (kind === 'ofx') {
     const count = (text.match(/<STMTTRN>/gi) ?? []).length
     const balMatch = /<BALAMT>([-\d.]+)/i.exec(text)
-    const acctMatch = /<ACCTID>(\w+)/i.exec(text)
+    const acctMatch = /<ACCTID>([^<\r\n]+)/i.exec(text)
+    const acctid = acctMatch?.[1]?.trim() ?? null
     return {
-      accounts_found: acctMatch ? [`···${acctMatch[1]!.slice(-4)}`] : ['unknown'],
+      accounts_found: acctid ? [acctid] : [],
       transaction_count: count,
       balance: balMatch ? Number(balMatch[1]) : 0,
+      // #26: matched by hashed ACCTID
+      account_match: {
+        account_id: acctid ? (db.externalLinks.get(db.externalIdHash(acctid)) ?? null) : null,
+        acctid_masked: acctid ? `···${acctid.slice(-4)}` : null,
+      },
     }
   }
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
-  if (lines.length < 2) throw new ApiError(400, 'empty_file', 'No data rows found')
-  const columns = splitCsvLine(lines[0]!)
+  const rows = parseCsv(text)
+  if (rows.length < 2) throw new ApiError(400, 'empty_file', 'No data rows found')
+  const columns = rows[0]!
+  const dataRows = rows.slice(1)
   // contract ruling 2026-07-10: rows are {column: value} objects
-  const sample_rows = lines.slice(1, 9).map((l) => {
-    const cells = splitCsvLine(l)
+  const sample_rows = dataRows.slice(0, 8).map((cells) => {
     const row: Record<string, string> = {}
     columns.forEach((c, i) => {
       row[c] = cells[i] ?? ''
     })
     return row
   })
-  const suggested = suggestedMapping(columns)
+  const suggested = suggestedMapping(columns, dataRows)
 
   // v1.2.2 (T-009): preset match by header fingerprint + sign-convention hint
-  const preset = db.importPresets.find((p) => p.header_fingerprint === fingerprintOf(columns))
+  const preset = db.importPresets.find((p) => p.header_fingerprint === db.fingerprintOf(columns))
   const matched_preset = preset
-    ? { id: preset.id, name: preset.name, mapping: preset.mapping, flip_signs: preset.flip_signs }
+    ? {
+        id: preset.id,
+        name: preset.name,
+        mapping: preset.mapping,
+        flip_signs: preset.flip_signs,
+        last_account_id: liveLastAccountId(preset),
+      }
     : null
+
+  // #26: an explicit mapping override wins (the wizard re-previews after
+  // remapping), then the matched preset, then the suggestion
+  const overrideRaw = form.get('mapping')
+  const effective: Partial<CsvMapping> = overrideRaw
+    ? (JSON.parse(String(overrideRaw)) as Partial<CsvMapping>)
+    : (preset?.mapping ?? suggested)
 
   let sign_hint: { looks_flipped: boolean; reason: string } | null = null
   const account = db.accounts.find((a) => a.id === Number(form.get('account_id')))
-  const effective = preset?.mapping ?? suggested
   if (account && SIGN_HINT_TYPES.includes(account.type) && !(effective.debit && effective.credit)) {
-    const amounts = lines
-      .slice(1)
-      .map((l) => rowAmount(splitCsvLine(l), columns, effective))
+    const amounts = dataRows
+      .filter((cells) => !isPending(cells, columns, effective))
+      .map((cells) => rowAmount(cells, columns, effective))
       .filter((v): v is number => v !== null && Number.isFinite(v))
     const positive = amounts.filter((v) => v > 0).length
     if (amounts.length > 0 && positive / amounts.length > 0.8) {
@@ -306,52 +418,149 @@ async function importPreview(form: FormData): Promise<ImportPreview> {
     }
   }
 
-  return { columns, sample_rows, suggested_mapping: suggested, matched_preset, sign_hint }
+  const pending_rows = effective.status_column
+    ? dataRows.filter((cells) => isPending(cells, columns, effective)).length
+    : null
+
+  return {
+    columns,
+    sample_rows,
+    suggested_mapping: suggested,
+    matched_preset,
+    sign_hint,
+    account_groups: accountGroups(columns, dataRows, effective),
+    pending_rows,
+  }
 }
 
-async function importCommit(form: FormData) {
+function createImportAccount(payload: NewAccountPayload): Account {
+  const a: Account = {
+    id: db.nextId.account++,
+    name: payload.name,
+    type: payload.type,
+    institution: payload.institution ?? '',
+    balance: 0,
+    growth_rate_pct: null,
+    asset_class: payload.asset_class ?? null,
+    member_id: payload.member_id ?? null,
+    include_in_net_worth: true,
+    notes: '',
+    created_at: todayISO(),
+    last_import_at: null,
+    newest_transaction_date: null,
+    staleness_days: null,
+    track_freshness: db.TRACK_FRESHNESS_DEFAULT.includes(payload.type),
+    freshness: 'never',
+  }
+  db.accounts.push(a)
+  db.balances.set(a.id, [{ date: todayISO(), amount: 0 }])
+  return a
+}
+
+interface ParsedRow {
+  date: string
+  amount: number
+  payee: string
+  category: string
+  accountKey: string | null
+  accountName: string | null
+  accountMasked: string | null
+}
+
+/** Insert rows into one account: dedupe, categorization (#26 investment
+ * ruling), freshness bookkeeping. */
+function importRowsInto(account: Account, rows: ParsedRow[]): { imported: number; skipped: number } {
+  const seen = new Set(
+    db.transactions
+      .filter((t) => t.account_id === account.id)
+      .map((t) => `${t.date}|${t.amount}|${t.payee}`),
+  )
+  const investment = INVESTMENT_TYPES.includes(account.type)
+  let imported = 0
+  let skipped = 0
+  for (const r of rows) {
+    const key = `${r.date}|${r.amount}|${r.payee}`
+    if (seen.has(key)) {
+      skipped++
+      continue
+    }
+    seen.add(key)
+    // #26 rulings: investment accounts categorize investment-activity;
+    // file-supplied categories are heuristic-grade (never manual)
+    const category = investment ? INVESTMENT_ACTIVITY_CATEGORY : r.category
+    db.transactions.unshift({
+      id: db.nextId.transaction++,
+      account_id: account.id,
+      transfer_pair_id: null,
+      category,
+      category_source: category ? 'heuristic' : 'none',
+      date: r.date,
+      amount: r.amount,
+      payee: r.payee,
+    })
+    imported++
+  }
+  account.last_import_at = `${todayISO()}T00:00:00`
+  account.newest_transaction_date = rows.reduce<string | null>(
+    (mx, r) => (mx && mx >= r.date ? mx : r.date),
+    account.newest_transaction_date,
+  )
+  return { imported, skipped }
+}
+
+async function importCommit(form: FormData): Promise<ImportCommitResult> {
   const file = form.get('file')
-  const accountId = Number(form.get('account_id'))
   const kind = form.get('kind')
   const mappingRaw = form.get('mapping')
   if (!(file instanceof File)) throw new ApiError(400, 'bad_request', 'file is required')
   const text = await file.text()
-  let rows: { date: string; amount: number; payee: string; category: string }[] = []
+  let rows: ParsedRow[] = []
+  let skippedPending = 0
+  let mapping: Partial<CsvMapping> = {}
+  let ofxAcctid: string | null = null
+  let columns: string[] = []
 
   if (kind === 'csv') {
-    const mapping = JSON.parse(String(mappingRaw ?? '{}')) as CsvMapping
+    mapping = JSON.parse(String(mappingRaw ?? '{}')) as CsvMapping
     const flipSigns = form.get('flip_signs') === 'true'
-    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
-    const columns = splitCsvLine(lines[0]!)
+    const parsed = parseCsv(text)
+    columns = parsed[0] ?? []
     const idx = (name?: string) => (name ? columns.indexOf(name) : -1)
     const di = idx(mapping.date)
     const pi = idx(mapping.payee)
     const ci = idx(mapping.category)
+    const ai = idx(mapping.account_id_column)
+    const ni = idx(mapping.account_column)
     const split = !!(mapping.debit && mapping.credit)
     if (di < 0 || (!split && idx(mapping.amount) < 0))
       throw new ApiError(400, 'bad_mapping', 'date and amount columns are required')
-    rows = lines
-      .slice(1)
-      .map((l) => {
-        const cells = splitCsvLine(l)
-        const amount = rowAmount(cells, columns, mapping)
-        const date = normalizeDate(cells[di] ?? '')
-        // trailing-summary tolerance: rows without a parseable date+amount
-        // are dropped (the real server only tolerates a trailing block)
-        if (amount === null || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
-        return {
-          date,
-          amount: flipSigns ? -amount : amount,
-          payee: pi >= 0 ? (cells[pi] ?? '') : '',
-          category: ci >= 0 ? (cells[ci] ?? '') : '',
-        }
+    for (const cells of parsed.slice(1)) {
+      // #26 Citi ruling: pending rows are skipped entirely
+      if (isPending(cells, columns, mapping)) {
+        skippedPending++
+        continue
+      }
+      const amount = rowAmount(cells, columns, mapping)
+      const date = normalizeDate(cells[di] ?? '')
+      // trailing-summary tolerance: rows without a parseable date+amount
+      // are dropped (the real server only tolerates a trailing block)
+      if (amount === null || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+      const rawNumber = ai >= 0 ? (cells[ai] ?? '').trim() : ''
+      rows.push({
+        date,
+        amount: flipSigns ? -amount : amount,
+        payee: normalizePayee(pi >= 0 ? (cells[pi] ?? '') : ''),
+        category: ci >= 0 ? (cells[ci] ?? '').trim() : '',
+        accountKey: rawNumber ? db.externalIdHash(rawNumber) : null,
+        accountName: ni >= 0 ? (cells[ni] ?? '').trim() || null : null,
+        accountMasked: rawNumber ? `···${rawNumber.slice(-4)}` : null,
       })
-      .filter((r): r is NonNullable<typeof r> => r !== null)
+    }
 
     // v1.2.2 (T-009): save_preset upserts by header fingerprint
     const presetName = String(form.get('save_preset') ?? '').trim()
     if (presetName) {
-      const fp = fingerprintOf(columns)
+      const fp = db.fingerprintOf(columns)
       const existing = db.importPresets.find((p) => p.header_fingerprint === fp)
       if (existing) {
         existing.name = presetName
@@ -365,54 +574,123 @@ async function importCommit(form: FormData) {
           mapping,
           flip_signs: flipSigns,
           created_at: `${todayISO()}T00:00:00`,
+          last_account_id: null,
         })
       }
     }
   } else {
+    ofxAcctid = /<ACCTID>([^<\r\n]+)/i.exec(text)?.[1]?.trim() ?? null
     const blocks = text.split(/<STMTTRN>/i).slice(1)
     rows = blocks.map((b) => ({
       date: normalizeDate(/<DTPOSTED>(\d{8})/i.exec(b)?.[1] ?? ''),
       amount: Number(/<TRNAMT>([-\d.]+)/i.exec(b)?.[1] ?? 0),
-      payee: /<NAME>([^<\r\n]+)/i.exec(b)?.[1]?.trim() ?? '',
+      payee: normalizePayee(/<NAME>([^<\r\n]+)/i.exec(b)?.[1] ?? ''),
       category: '',
+      accountKey: null,
+      accountName: null,
+      accountMasked: null,
     }))
   }
 
-  const seen = new Set(
-    db.transactions
-      .filter((t) => t.account_id === accountId)
-      .map((t) => `${t.date}|${t.amount}|${t.payee}`),
-  )
-  let imported = 0
-  let skipped = 0
-  for (const r of rows) {
-    const key = `${r.date}|${r.amount}|${r.payee}`
-    if (seen.has(key)) {
-      skipped++
-      continue
+  const multi = kind === 'csv' && !!mapping.account_id_column
+  const accountIdRaw = form.get('account_id')
+  const newAccountRaw = form.get('new_account')
+
+  if (multi) {
+    if (accountIdRaw !== null || newAccountRaw !== null)
+      throw new ApiError(422, 'validation_error', 'multi-account imports route by account_map')
+    const accountMap = JSON.parse(String(form.get('account_map') ?? '{}')) as AccountMap
+    const order: string[] = []
+    const groups = new Map<string, ParsedRow[]>()
+    for (const r of rows) {
+      if (!r.accountKey)
+        throw new ApiError(422, 'validation_error', 'a dated row is missing its account number')
+      if (!groups.has(r.accountKey)) {
+        order.push(r.accountKey)
+        groups.set(r.accountKey, [])
+      }
+      groups.get(r.accountKey)!.push(r)
     }
-    seen.add(key)
-    db.transactions.unshift({
-      id: db.nextId.transaction++,
-      account_id: accountId,
-      transfer_pair_id: null,
-      category_source: r.category ? 'rule' : 'none',
-      ...r,
-    })
-    imported++
-  }
-  const acct = db.accounts.find((a) => a.id === accountId)
-  if (acct) {
-    // v1.2 freshness bookkeeping
-    acct.last_import_at = `${todayISO()}T00:00:00`
-    const newest = rows.reduce<string | null>((mx, r) => (mx && mx >= r.date ? mx : r.date), acct.newest_transaction_date)
-    acct.newest_transaction_date = newest
-    if (form.get('update_balance') === 'true' && rows.length > 0) {
-      const delta = rows.reduce((s, r) => s + r.amount, 0)
-      setBalance(acct, Math.round((acct.balance + delta) * 100) / 100)
+    // resolve every group before writing anything (fail closed)
+    const resolved = new Map<string, { account: Account; created: boolean }>()
+    const unknown: string[] = []
+    for (const key of order) {
+      const entry = accountMap[key]
+      if (entry && 'account_id' in entry) {
+        const acc = db.accounts.find((a) => a.id === entry.account_id)
+        if (!acc) notFound('account')
+        db.externalLinks.set(key, acc.id)
+        resolved.set(key, { account: acc, created: false })
+      } else if (entry && 'new_account' in entry) {
+        const acc = createImportAccount(entry.new_account)
+        db.externalLinks.set(key, acc.id)
+        resolved.set(key, { account: acc, created: true })
+      } else {
+        const linked = db.externalLinks.get(key)
+        const acc = db.accounts.find((a) => a.id === linked)
+        if (acc) resolved.set(key, { account: acc, created: false })
+        else unknown.push(groups.get(key)![0]!.accountMasked ?? key)
+      }
     }
+    if (unknown.length > 0)
+      throw new ApiError(
+        422, 'unknown_account',
+        `no account is linked to ${unknown.join(', ')} — map each to an existing account or create new ones`,
+      )
+    const accounts: ImportAccountResult[] = []
+    let imported = 0
+    let skipped = 0
+    for (const key of order) {
+      const { account, created } = resolved.get(key)!
+      const result = importRowsInto(account, groups.get(key)!)
+      imported += result.imported
+      skipped += result.skipped
+      accounts.push({
+        account_id: account.id,
+        name: account.name,
+        created,
+        imported: result.imported,
+        skipped_duplicates: result.skipped,
+      })
+    }
+    return { imported, skipped_duplicates: skipped, skipped_pending: skippedPending, accounts }
   }
-  return { imported, skipped_duplicates: skipped }
+
+  // single-target mode: exactly one of account_id / new_account (#26)
+  if ((accountIdRaw === null) === (newAccountRaw === null))
+    throw new ApiError(422, 'validation_error', 'provide exactly one of account_id or new_account')
+  let account: Account
+  let created = false
+  if (newAccountRaw !== null) {
+    account = createImportAccount(JSON.parse(String(newAccountRaw)) as NewAccountPayload)
+    created = true
+  } else {
+    account = db.accounts.find((a) => a.id === Number(accountIdRaw)) ?? notFound('account')
+  }
+
+  // #26: hashed external-account link for OFX (last-write-wins)
+  if (ofxAcctid) db.externalLinks.set(db.externalIdHash(ofxAcctid), account.id)
+
+  const { imported, skipped } = importRowsInto(account, rows)
+
+  if (form.get('update_balance') === 'true' && rows.length > 0) {
+    const delta = rows.reduce((s, r) => s + r.amount, 0)
+    setBalance(account, Math.round((account.balance + delta) * 100) / 100)
+  }
+
+  // #26: single-target CSV commits remember the target on the matched preset
+  if (kind === 'csv' && columns.length > 0) {
+    const preset = db.importPresets.find((p) => p.header_fingerprint === db.fingerprintOf(columns))
+    if (preset) preset.last_account_id = account.id
+  }
+
+  const result: ImportCommitResult = {
+    imported,
+    skipped_duplicates: skipped,
+    skipped_pending: skippedPending,
+  }
+  if (created) result.account = serveAccount(account)
+  return result
 }
 
 function normalizeDate(raw: string): string {
@@ -889,6 +1167,18 @@ async function route(
   if (key === 'GET /dashboard') return dashboard()
   if (key === 'GET /settings') return db.settings
   if (key === 'PATCH /settings') return Object.assign(db.settings, body)
+
+  /* ---- admin reset (#27) ---- */
+  if (key === 'POST /admin/reset') {
+    const mode = String(body?.mode ?? '')
+    if (mode !== 'demo' && mode !== 'empty')
+      throw new ApiError(422, 'validation_error', 'mode must be demo or empty')
+    if (String(body?.confirm ?? '') !== 'reset ludovitae')
+      throw new ApiError(422, 'confirm_required', 'confirm must be exactly "reset ludovitae"')
+    db.resetDb(mode)
+    const stamp = todayISO().replace(/-/g, '')
+    return { backup: `pre-reset-${stamp}T000000Z.db`, mode }
+  }
 
   throw new ApiError(404, 'not_found', `No mock route for ${key}`)
 }

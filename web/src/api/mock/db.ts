@@ -444,10 +444,76 @@ export const rules: CategoryRule[] = [
 ]
 
 /* ------------------- import presets (v1.2.2, T-009) ---------------------- */
-/* Saved column mappings keyed by header fingerprint; empty until the user
- * saves one from the import wizard's commit step. */
+/* Saved column mappings keyed by header fingerprint. #26: the built-in
+ * institution presets ship pre-seeded (mirroring migration 0007); user
+ * presets append after them. */
 
-export const importPresets: ImportPreset[] = []
+/** Mock header fingerprint (v1.2.2, T-009). The real server uses sha256 of
+ * the lowercased, sorted, comma-joined headers; the mock only needs the same
+ * *identity* semantics, so a cheap deterministic hash of that material. */
+export function fingerprintOf(columns: string[]): string {
+  const material = columns.map((c) => c.trim().toLowerCase()).sort().join(',')
+  return fnv(material)
+}
+
+/** #26: mock stand-in for the server's sha256 external-account hash. */
+export function externalIdHash(raw: string): string {
+  return fnv(`ext:${raw.trim()}`)
+}
+
+function fnv(material: string): string {
+  let h = 2166136261
+  for (let i = 0; i < material.length; i++) {
+    h ^= material.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
+/** #26: hashed external-account links (hash → account id). The server
+ * stores these on the account row; a side map keeps the mock simple. */
+export const externalLinks = new Map<string, number>()
+
+const BUILTIN_PRESET_SPECS: { name: string; columns: string[]; mapping: ImportPreset['mapping']; flip_signs: boolean }[] = [
+  {
+    name: 'Fidelity — Accounts History',
+    columns: ['Run Date', 'Account', 'Account Number', 'Action', 'Symbol', 'Description', 'Type', 'Exchange Quantity', 'Exchange Currency', 'Currency', 'Price', 'Quantity', 'Exchange Rate', 'Commission', 'Fees', 'Accrued Interest', 'Amount', 'Settlement Date'],
+    mapping: { date: 'Run Date', amount: 'Amount', payee: 'Action', account_column: 'Account', account_id_column: 'Account Number' },
+    flip_signs: false,
+  },
+  {
+    name: 'American Express — Activity',
+    columns: ['Date', 'Description', 'Card Member', 'Account #', 'Amount', 'Extended Details', 'Appears On Your Statement As', 'Address', 'City/State', 'Zip Code', 'Country', 'Reference', 'Category'],
+    mapping: { date: 'Date', amount: 'Amount', payee: 'Description', category: 'Category', account_id_column: 'Account #' },
+    flip_signs: true,
+  },
+  {
+    name: 'Citi — Credit Card',
+    columns: ['Status', 'Date', 'Description', 'Debit', 'Credit', 'Member Name'],
+    mapping: { date: 'Date', debit: 'Debit', credit: 'Credit', payee: 'Description', status_column: 'Status' },
+    flip_signs: false,
+  },
+  {
+    name: 'Commerce Bank — Checking',
+    columns: ['Date', 'No.', 'Description', 'Debit', 'Credit'],
+    mapping: { date: 'Date', debit: 'Debit', credit: 'Credit', payee: 'Description' },
+    flip_signs: false,
+  },
+]
+
+function builtinPresets(): ImportPreset[] {
+  return BUILTIN_PRESET_SPECS.map((spec, i) => ({
+    id: i + 1,
+    name: spec.name,
+    header_fingerprint: fingerprintOf(spec.columns),
+    mapping: spec.mapping,
+    flip_signs: spec.flip_signs,
+    created_at: `${today}T00:00:00`,
+    last_account_id: null,
+  }))
+}
+
+export const importPresets: ImportPreset[] = builtinPresets()
 
 /* ----------------------- AI budget state (v1.2) -------------------------- */
 /* The key itself is write-only storage; enabled stays false (stub). Usage is
@@ -471,5 +537,77 @@ export const nextId = {
   transaction: transactions.length + 1,
   rule: 4,
   transferPair: 9500,
-  importPreset: 1,
+  importPreset: BUILTIN_PRESET_SPECS.length + 1,
+}
+
+/* --------------------------- admin reset (#27) --------------------------- */
+/* Deep snapshot of the demo state at module load, so mode=demo restores it
+ * and mode=empty wipes to a fresh household — mirroring POST /admin/reset.
+ * Auth (localStorage), settings, and aiState are deliberately preserved. */
+
+const initialState = structuredClone({
+  profile,
+  household,
+  accounts,
+  flows,
+  spendingProfile,
+  goals,
+  scenarios,
+  transactions,
+  transferCandidates,
+  rules,
+  balances: [...balances.entries()],
+  nextId,
+})
+
+function replaceArray<T>(target: T[], next: T[]): void {
+  target.splice(0, target.length, ...next)
+}
+
+export function resetDb(mode: 'demo' | 'empty'): void {
+  transferTombstones.clear()
+  externalLinks.clear()
+  replaceArray(importPresets, builtinPresets())
+  if (mode === 'demo') {
+    const snap = structuredClone(initialState)
+    Object.assign(profile, snap.profile)
+    replaceArray(household, snap.household)
+    replaceArray(accounts, snap.accounts)
+    replaceArray(flows, snap.flows)
+    spendingProfile.categories = snap.spendingProfile.categories
+    spendingProfile.monthly_savings_target = snap.spendingProfile.monthly_savings_target
+    replaceArray(goals, snap.goals)
+    replaceArray(scenarios, snap.scenarios)
+    replaceArray(transactions, snap.transactions)
+    replaceArray(transferCandidates, snap.transferCandidates)
+    replaceArray(rules, snap.rules)
+    balances.clear()
+    for (const [id, snaps] of snap.balances) balances.set(id, snaps)
+    Object.assign(nextId, snap.nextId, { importPreset: nextId.importPreset })
+    return
+  }
+  // empty: a single fresh self member with nulls + defaults profile
+  Object.assign(profile, {
+    annual_retirement_spending: 80000,
+    inflation_pct: 2.5,
+    effective_tax_rate_pct: 18, // web Profile type is non-nullable (pre-#26 drift)
+  })
+  replaceArray(household, [
+    {
+      id: 1, name: 'You', role: 'self' as const, birth_year: 1980,
+      life_expectancy: 92, retirement_age: null, ss_monthly_at_fra: null,
+      ss_claim_age: null, notes: '',
+    },
+  ])
+  replaceArray(accounts, [])
+  replaceArray(flows, [])
+  spendingProfile.categories = []
+  spendingProfile.monthly_savings_target = 0
+  replaceArray(goals, [])
+  replaceArray(scenarios, [])
+  replaceArray(transactions, [])
+  replaceArray(transferCandidates, [])
+  replaceArray(rules, [])
+  balances.clear()
+  nextId.member = 2
 }

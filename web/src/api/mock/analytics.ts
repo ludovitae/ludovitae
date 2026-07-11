@@ -18,9 +18,15 @@ import { todayISO } from '@/lib/format'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
-/** Spending rows: outflows, not transfer-paired. */
+/** Spending rows: outflows, not transfer-paired, not investment activity
+ * (#26 ruling — reinvestments/dividends are not spending). */
 function outflows(): Transaction[] {
-  return db.transactions.filter((t) => t.amount < 0 && t.transfer_pair_id === null)
+  return db.transactions.filter(
+    (t) =>
+      t.amount < 0 &&
+      t.transfer_pair_id === null &&
+      t.category !== 'investment-activity',
+  )
 }
 
 const MS_DAY = 86_400_000
