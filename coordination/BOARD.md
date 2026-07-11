@@ -9,7 +9,7 @@
 | T-005 | v1.1 backend: household members, spending profile, SS/RMD timing engine, milestones | backend-dev agent | ws/household-be | done — 162 tests, migration sim-identity exact, merged to main |
 | T-006 | v1.1 frontend: household & spending pages, milestone markers, timing controls | frontend-dev agent | ws/household-fe | done — web 62→97 tests, merged to main |
 | T-007 | v1.2 backend: transfers/credit-card model, rules+heuristic categorization, freshness, analytics, AI budget | backend-dev agent | ws/spending-be | todo |
-| T-008 | v1.2 frontend: spending hub, review queues, freshness badges, AI admin panel | frontend-dev agent | ws/spending-fe | todo |
+| T-008 | v1.2 frontend: spending hub, review queues, freshness badges, AI admin panel | frontend-dev agent | ws/spending-fe | review — web 97→128 tests; 7 contract flags in task log for T-007 alignment |
 
 ## Backlog (unowned)
 
