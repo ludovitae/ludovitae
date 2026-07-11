@@ -205,6 +205,60 @@ function splitCsvLine(line: string): string[] {
   return out
 }
 
+/** Mock header fingerprint (v1.2.2, T-009). The real server uses sha256 of
+ * the lowercased, sorted, comma-joined headers; the mock only needs the same
+ * *identity* semantics, so a cheap deterministic hash of that material. */
+function fingerprintOf(columns: string[]): string {
+  const material = columns.map((c) => c.trim().toLowerCase()).sort().join(',')
+  let h = 2166136261
+  for (let i = 0; i < material.length; i++) {
+    h ^= material.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
+const SIGN_HINT_TYPES = ['credit_card', 'loan', 'mortgage']
+
+function suggestedMapping(columns: string[]): Partial<CsvMapping> {
+  const suggested: Partial<CsvMapping> = {}
+  for (const col of columns) {
+    const c = col.toLowerCase()
+    if (!suggested.date && /date|posted/.test(c)) suggested.date = col
+    else if (!suggested.amount && /amount|amt|value/.test(c)) suggested.amount = col
+    else if (!suggested.payee && /payee|description|merchant|name/.test(c)) suggested.payee = col
+    else if (!suggested.category && /category|type/.test(c)) suggested.category = col
+  }
+  if (!suggested.amount) {
+    // v1.2.2: split debit/credit columns (a column matching both — e.g.
+    // "Debit/Credit" — would be a single amount column, handled above)
+    const debit = columns.find((c) => /debit|withdrawal|money out|charge/.test(c.toLowerCase()) && !/credit|deposit|money in/.test(c.toLowerCase()))
+    const credit = columns.find((c) => /credit|deposit|money in/.test(c.toLowerCase()) && !/debit|withdrawal|money out|charge/.test(c.toLowerCase()))
+    if (debit && credit) {
+      suggested.debit = debit
+      suggested.credit = credit
+    }
+  }
+  return suggested
+}
+
+function rowAmount(cells: string[], columns: string[], mapping: Partial<CsvMapping>): number | null {
+  const idx = (name?: string) => (name ? columns.indexOf(name) : -1)
+  const num = (raw: string) => {
+    const cleaned = raw.replace(/[$,]/g, '').trim()
+    return cleaned === '' ? null : Number(cleaned)
+  }
+  if (mapping.debit && mapping.credit) {
+    const debit = num(cells[idx(mapping.debit)] ?? '')
+    const credit = num(cells[idx(mapping.credit)] ?? '')
+    if (debit === null && credit === null) return null
+    // debit = outflow (negative), credit = inflow (positive)
+    return (credit ?? 0) - Math.abs(debit ?? 0)
+  }
+  const v = num(cells[idx(mapping.amount)] ?? '')
+  return v !== null && Number.isFinite(v) ? v : null
+}
+
 async function importPreview(form: FormData): Promise<ImportPreview> {
   const file = form.get('file')
   const kind = form.get('kind')
@@ -232,15 +286,33 @@ async function importPreview(form: FormData): Promise<ImportPreview> {
     })
     return row
   })
-  const suggested: Partial<CsvMapping> = {}
-  for (const col of columns) {
-    const c = col.toLowerCase()
-    if (!suggested.date && /date|posted/.test(c)) suggested.date = col
-    else if (!suggested.amount && /amount|amt|value/.test(c)) suggested.amount = col
-    else if (!suggested.payee && /payee|description|merchant|name/.test(c)) suggested.payee = col
-    else if (!suggested.category && /category|type/.test(c)) suggested.category = col
+  const suggested = suggestedMapping(columns)
+
+  // v1.2.2 (T-009): preset match by header fingerprint + sign-convention hint
+  const preset = db.importPresets.find((p) => p.header_fingerprint === fingerprintOf(columns))
+  const matched_preset = preset
+    ? { id: preset.id, name: preset.name, mapping: preset.mapping, flip_signs: preset.flip_signs }
+    : null
+
+  let sign_hint: { looks_flipped: boolean; reason: string } | null = null
+  const account = db.accounts.find((a) => a.id === Number(form.get('account_id')))
+  const effective = preset?.mapping ?? suggested
+  if (account && SIGN_HINT_TYPES.includes(account.type) && !(effective.debit && effective.credit)) {
+    const amounts = lines
+      .slice(1)
+      .map((l) => rowAmount(splitCsvLine(l), columns, effective))
+      .filter((v): v is number => v !== null && Number.isFinite(v))
+    const positive = amounts.filter((v) => v > 0).length
+    if (amounts.length > 0 && positive / amounts.length > 0.8) {
+      const label = account.type === 'credit_card' ? 'credit card' : account.type
+      sign_hint = {
+        looks_flipped: true,
+        reason: `${positive} of ${amounts.length} rows look like charges, but they are positive — this ${label} export probably lists charges as positive numbers. Flipping signs stores charges as money out.`,
+      }
+    }
   }
-  return { columns, sample_rows, suggested_mapping: suggested }
+
+  return { columns, sample_rows, suggested_mapping: suggested, matched_preset, sign_hint }
 }
 
 async function importCommit(form: FormData) {
@@ -254,23 +326,54 @@ async function importCommit(form: FormData) {
 
   if (kind === 'csv') {
     const mapping = JSON.parse(String(mappingRaw ?? '{}')) as CsvMapping
+    const flipSigns = form.get('flip_signs') === 'true'
     const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
     const columns = splitCsvLine(lines[0]!)
     const idx = (name?: string) => (name ? columns.indexOf(name) : -1)
     const di = idx(mapping.date)
-    const ai = idx(mapping.amount)
     const pi = idx(mapping.payee)
     const ci = idx(mapping.category)
-    if (di < 0 || ai < 0) throw new ApiError(400, 'bad_mapping', 'date and amount columns are required')
-    rows = lines.slice(1).map((l) => {
-      const cells = splitCsvLine(l)
-      return {
-        date: normalizeDate(cells[di] ?? ''),
-        amount: Number((cells[ai] ?? '0').replace(/[$,]/g, '')) || 0,
-        payee: pi >= 0 ? (cells[pi] ?? '') : '',
-        category: ci >= 0 ? (cells[ci] ?? '') : '',
+    const split = !!(mapping.debit && mapping.credit)
+    if (di < 0 || (!split && idx(mapping.amount) < 0))
+      throw new ApiError(400, 'bad_mapping', 'date and amount columns are required')
+    rows = lines
+      .slice(1)
+      .map((l) => {
+        const cells = splitCsvLine(l)
+        const amount = rowAmount(cells, columns, mapping)
+        const date = normalizeDate(cells[di] ?? '')
+        // trailing-summary tolerance: rows without a parseable date+amount
+        // are dropped (the real server only tolerates a trailing block)
+        if (amount === null || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+        return {
+          date,
+          amount: flipSigns ? -amount : amount,
+          payee: pi >= 0 ? (cells[pi] ?? '') : '',
+          category: ci >= 0 ? (cells[ci] ?? '') : '',
+        }
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+
+    // v1.2.2 (T-009): save_preset upserts by header fingerprint
+    const presetName = String(form.get('save_preset') ?? '').trim()
+    if (presetName) {
+      const fp = fingerprintOf(columns)
+      const existing = db.importPresets.find((p) => p.header_fingerprint === fp)
+      if (existing) {
+        existing.name = presetName
+        existing.mapping = mapping
+        existing.flip_signs = flipSigns
+      } else {
+        db.importPresets.push({
+          id: db.nextId.importPreset++,
+          name: presetName,
+          header_fingerprint: fp,
+          mapping,
+          flip_signs: flipSigns,
+          created_at: `${todayISO()}T00:00:00`,
+        })
       }
-    })
+    }
   } else {
     const blocks = text.split(/<STMTTRN>/i).slice(1)
     rows = blocks.map((b) => ({
@@ -737,6 +840,13 @@ async function route(
   /* ---- import ---- */
   if (key === 'POST /import/preview') return importPreview(form!)
   if (key === 'POST /import/commit') return importCommit(form!)
+  if (key === 'GET /import/presets') return db.importPresets
+  m = /^\/import\/presets\/(\d+)$/.exec(path)
+  if (m && method === 'DELETE') {
+    const p = db.importPresets.find((x) => x.id === Number(m![1])) ?? notFound('preset')
+    db.importPresets.splice(db.importPresets.indexOf(p), 1)
+    return undefined
+  }
 
   /* ---- scenarios ---- */
   if (key === 'GET /scenarios') return [baselineScenario(), ...db.scenarios]

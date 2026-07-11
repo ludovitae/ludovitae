@@ -8,6 +8,7 @@ import type {
   Flow,
   Goal,
   HouseholdMember,
+  ImportPreset,
   Profile,
   Scenario,
   Settings,
@@ -442,6 +443,12 @@ export const rules: CategoryRule[] = [
   { id: 3, pattern: 'pge', match: 'contains', field: 'payee', category: 'utilities', priority: 3 },
 ]
 
+/* ------------------- import presets (v1.2.2, T-009) ---------------------- */
+/* Saved column mappings keyed by header fingerprint; empty until the user
+ * saves one from the import wizard's commit step. */
+
+export const importPresets: ImportPreset[] = []
+
 /* ----------------------- AI budget state (v1.2) -------------------------- */
 /* The key itself is write-only storage; enabled stays false (stub). Usage is
  * all zeros — the ledger ships before any AI call exists. */
@@ -464,4 +471,5 @@ export const nextId = {
   transaction: transactions.length + 1,
   rule: 4,
   transferPair: 9500,
+  importPreset: 1,
 }

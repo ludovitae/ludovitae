@@ -332,11 +332,41 @@ export interface AiUsageMonth {
   >
 }
 
+/** v1.2.2 (T-009): either a single `amount` column OR split `debit`/`credit`
+ * columns (debit = outflow → negative, credit = inflow → positive). */
 export interface CsvMapping {
   date: string
-  amount: string
-  payee: string
+  amount?: string
+  debit?: string
+  credit?: string
+  payee?: string
   category?: string
+}
+
+/** v1.2.2 (T-009): saved column mapping per institution, keyed by the CSV
+ * header fingerprint (sha256 of lowercased, sorted, comma-joined headers). */
+export interface ImportPreset {
+  id: number
+  name: string
+  header_fingerprint: string
+  mapping: Partial<CsvMapping>
+  flip_signs: boolean
+  created_at: string
+}
+
+/** The preset subset preview returns on a fingerprint match. */
+export interface MatchedPreset {
+  id: number
+  name: string
+  mapping: Partial<CsvMapping>
+  flip_signs: boolean
+}
+
+/** v1.2.2 (T-009): sign-convention heuristic — liability account with >80%
+ * positive amounts reads as a charges-positive export. */
+export interface SignHint {
+  looks_flipped: boolean
+  reason: string
 }
 
 export interface ImportPreviewCsv {
@@ -344,6 +374,9 @@ export interface ImportPreviewCsv {
   /** contract ruling 2026-07-10: rows are {column: value} objects */
   sample_rows: Record<string, string>[]
   suggested_mapping: Partial<CsvMapping>
+  /* v1.2.2 (T-009) */
+  matched_preset: MatchedPreset | null
+  sign_hint: SignHint | null
 }
 
 export interface ImportPreviewOfx {
