@@ -179,22 +179,28 @@ def parse_transactions(
             return row[i] if i is not None and i < len(row) else ""
 
         try:
-            amount = _row_amount(cell("amount"), split, cell("debit"), cell("credit"))
-            parsed.append(
-                ParsedTransaction(
-                    date=parse_date(cell("date")),
-                    amount=-amount if flip_signs else amount,
-                    payee=cell("payee").strip(),
-                    category=cell("category").strip() or None,
-                )
-            )
+            date = parse_date(cell("date"))
         except CsvError as exc:
+            # Only a row that doesn't even carry a date can be a summary
+            # footer candidate (trailing tolerance below).
             parsed.append(exc)
+            continue
+        # A row WITH a valid date must parse completely — amount errors
+        # (oversized, garbage, missing) always fail closed, never skip.
+        amount = _row_amount(cell("amount"), split, cell("debit"), cell("credit"))
+        parsed.append(
+            ParsedTransaction(
+                date=date,
+                amount=-amount if flip_signs else amount,
+                payee=cell("payee").strip(),
+                category=cell("category").strip() or None,
+            )
+        )
 
     # Trailing-summary tolerance (T-009): banks append "Total"/"Ending
-    # balance" footer rows. A contiguous block of unparseable rows at the END
-    # is silently dropped; an unparseable row anywhere else stays a hard error
-    # so mid-file corruption is never swallowed.
+    # balance" footer rows (no date in the date column). A contiguous block of
+    # date-less rows at the END is silently dropped; one anywhere else stays a
+    # hard error so mid-file corruption is never swallowed.
     last_ok = max((i for i, p in enumerate(parsed) if isinstance(p, ParsedTransaction)), default=-1)
     for item in parsed[: last_ok + 1]:
         if isinstance(item, CsvError):

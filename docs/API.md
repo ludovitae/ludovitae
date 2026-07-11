@@ -323,9 +323,11 @@ headers and suggests `debit`/`credit` instead of `amount`.
   flip_signs under this name, **upserting by header fingerprint** (one preset
   per institution header shape; a re-save updates name/mapping/flip_signs).
 
-Rows that cannot be parsed as transactions but form a contiguous *trailing*
-block (bank summary/total footers) are skipped by CSV parsing; unparseable
-rows anywhere else are still a hard `parse_error`.
+Rows with no parseable date that form a contiguous *trailing* block (bank
+summary/total footers) are skipped by CSV parsing; a date-less row anywhere
+else is still a hard `parse_error`, and a row **with** a valid date always
+fails closed on any amount problem (oversized, garbage, missing) — never
+skipped.
 
 ## Scenarios
 
