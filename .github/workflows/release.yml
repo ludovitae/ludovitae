@@ -7,18 +7,25 @@ on:
   release:
     types: [published]
 
+# Default minimal token scope (SECURITY-REVIEW-v1.2 V3). The build job only
+# reads the repo; the publish job overrides this with just id-token: write
+# (job-level permissions replace the default, so publish gets no contents scope
+# it doesn't need).
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.12"
       - name: Build sdist and wheel
         working-directory: server
         run: uv build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dists
           path: server/dist/
@@ -30,10 +37,10 @@ jobs:
     permissions:
       id-token: write   # OIDC for PyPI Trusted Publishing — no token anywhere
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dists
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
         with:
           packages-dir: dist/
