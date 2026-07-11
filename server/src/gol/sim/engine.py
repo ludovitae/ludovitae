@@ -21,14 +21,35 @@ Model summary (coarse by design, see ARCHITECTURE.md):
 - Household retirement transition: baseline expenses stop (via flow windows)
   and spending switches to annual_retirement_spending (inflated) at the LAST
   retirement.
-- Shortfalls are withdrawn from cash first, then from invested grossed up by a
-  coarse effective tax on the (fixed) retirement-account share — unchanged
-  from v1 so migrated plans simulate identically.
-- Income is taxed at the effective rate. Taxes are a coarse knob, not brackets.
-- Social security: at most ``SS_TAXABLE_SHARE`` (85%) of the benefit is
-  taxable (engine v2, T-011), so SS take-home is ``ss * (1 - 0.85 * tax)``.
-  The provisional-income phase-in is deliberately NOT modeled (bracket
-  workstream); 85% is the honest ceiling, not a precise model.
+- Shortfalls are withdrawn from cash first, then from invested grossed up for
+  withdrawal tax on the (fixed) retirement-account share.
+
+Taxes (engine v3, T-012 phase 2) run in one of two modes, selected by
+``effective_tax_rate_pct``:
+
+- **Flat mode** (``effective_tax_rate_pct`` set): the v1/v2 path, preserved
+  verbatim so migrated plans simulate bit-for-bit identically. Income is
+  taxed at the effective rate; withdrawals gross up by
+  ``rate * retirement_share``; at most ``SS_TAXABLE_SHARE`` (85%) of social
+  security is taxable (engine v2, T-011), so SS take-home is
+  ``ss * (1 - 0.85 * tax)``.
+- **Bracket mode** (``effective_tax_rate_pct`` is None): federal
+  bracket-aware model per docs/TAX-DESIGN.md §3-4. Taxes settle annually on
+  the plan-year grid (December, ``t % 12 == 11``). Per-path accumulators
+  collect gross ordinary income, gross SS (nominal), and tax-deferred
+  distributions (RMDs + the deemed ``retirement_share`` slice of shortfall
+  withdrawals). Monthly cash is credited gross less an estimated withholding
+  at the year's projected effective rate (computed each plan-year start from
+  the deterministic flow arrays and the RMD schedule; shortfall withdrawals
+  assumed 0). Withdrawals gross up at the household's current-year marginal
+  rate estimate. December settles ``true_tax - withheld`` exactly (via
+  ``gol.tax.compute_tax_year``), so the annual tax is always exact; estimate
+  error is only intra-year cash timing. Brackets and the standard deduction
+  are indexed by the sim's per-path price index; the SS taxability
+  thresholds stay nominal (IRC §86(c)); SS taxable share follows the
+  provisional-income tiers (replacing the flat 85% cap). A December
+  settlement can leave cash negative; the next month's shortfall step covers
+  it (income assigned to the new tax year).
 """
 
 from __future__ import annotations
@@ -43,6 +64,13 @@ from gol.sim.types import (
     INCOME,
     FlowSpec,
     PlanInputs,
+)
+from gol.tax import (
+    TaxYearInput,
+    compute_tax_year,
+    ordinary_marginal_rate,
+    standard_deduction,
+    taxable_social_security,
 )
 
 PERCENTILES = (10, 25, 50, 75, 90)
@@ -152,6 +180,25 @@ def _inflation_price_index(
     return np.cumprod(1.0 + rates, axis=1)
 
 
+def _marginal_rate_estimate(
+    non_ss_income: np.ndarray,
+    ss_so_far: np.ndarray,
+    filing_status: str,
+    index: np.ndarray,
+) -> np.ndarray:
+    """Bracket mode: household marginal ordinary rate at income-so-far
+    (TAX-DESIGN §4). Taxable-so-far = non-SS income + the Pub-915 taxable SS
+    share - the indexed standard deduction, floored at 0."""
+    tss = np.asarray(
+        taxable_social_security(ss_so_far, non_ss_income, filing_status), dtype=float
+    )
+    ded = np.asarray(standard_deduction(filing_status, index), dtype=float)
+    taxable = np.maximum(non_ss_income + tss - ded, 0.0)
+    return np.asarray(
+        ordinary_marginal_rate(taxable, filing_status, index), dtype=float
+    )
+
+
 def _run_paths(
     inputs: PlanInputs, n_paths: int, rng: np.random.Generator | None
 ) -> dict[str, np.ndarray | dict]:
@@ -177,9 +224,22 @@ def _run_paths(
     f_invested = w_s * f_stocks + w_b * f_bonds + w_c * f_cash
     price = _inflation_price_index(inputs, eps, shape)
 
-    tax = inputs.effective_tax_rate_pct / 100.0
-    wtax = tax * inputs.retirement_share  # coarse tax on retirement-share withdrawals
-    ss_net = 1.0 - SS_TAXABLE_SHARE * tax  # only 85% of SS is taxable (engine v2)
+    # Tax mode (engine v3, T-012): a set flat rate preserves the v1/v2 path
+    # verbatim; None runs the bracket-aware model (module docstring).
+    bracket_mode = inputs.effective_tax_rate_pct is None
+    if bracket_mode:
+        tax = wtax = ss_net = 0.0  # flat-path constants, unused in bracket mode
+        status = inputs.filing_status
+        r_share = inputs.retirement_share
+        withhold = np.zeros(n_paths)  # year's estimated withholding rate
+        ord_acc = np.zeros(n_paths)  # gross ordinary income, year to date
+        ss_acc = np.zeros(n_paths)  # gross SS received (nominal), year to date
+        wd_acc = np.zeros(n_paths)  # tax-deferred distributions, year to date
+        withheld = np.zeros(n_paths)  # estimated tax already withheld
+    else:
+        tax = inputs.effective_tax_rate_pct / 100.0
+        wtax = tax * inputs.retirement_share  # coarse tax on retirement-share withdrawals
+        ss_net = 1.0 - SS_TAXABLE_SHARE * tax  # only 85% of SS is taxable (engine v2)
     prop_f = (1.0 + inputs.property_growth_pct / 100.0) ** (1.0 / 12.0)
     debt_f = (1.0 + inputs.debt_growth_pct / 100.0) ** (1.0 / 12.0)
 
@@ -218,7 +278,38 @@ def _run_paths(
 
     for t in range(n):  # months; all ops below are vectorized over paths
         p = price[:, t]
-        cash = cash + income_fixed[t] * (1.0 - tax) + ss_base[t] * p * ss_net
+        if bracket_mode:
+            if t % 12 == 0:
+                # Plan-year start: project the year's effective rate for
+                # monthly withholding (TAX-DESIGN §3). Known pieces only:
+                # deterministic income flows, the SS schedule at the current
+                # price level, and this year's RMDs from current balances;
+                # shortfall withdrawals are assumed 0. December's settle-up
+                # charges/refunds the exact difference.
+                proj_wd = np.zeros(n_paths)
+                if track_td:
+                    for tm in range(t, min(t + 12, n)):
+                        for i, divisor in rmd_at.get(tm, ()):
+                            proj_wd = proj_wd + td[i] / divisor
+                proj = compute_tax_year(TaxYearInput(
+                    filing_status=status,
+                    ordinary_income=float(income_fixed[t:t + 12].sum()),
+                    ss_benefits=float(ss_base[t:t + 12].sum()) * p,
+                    tax_deferred_withdrawals=proj_wd,
+                    price_index=p,
+                ))
+                withhold = np.asarray(proj.effective_rate, dtype=float)
+                ord_acc = np.zeros(n_paths)
+                ss_acc = np.zeros(n_paths)
+                wd_acc = np.zeros(n_paths)
+                withheld = np.zeros(n_paths)
+            ss_now = ss_base[t] * p
+            cash = cash + (income_fixed[t] + ss_now) * (1.0 - withhold)
+            ord_acc = ord_acc + income_fixed[t]
+            ss_acc = ss_acc + ss_now
+            withheld = withheld + (income_fixed[t] + ss_now) * withhold
+        else:
+            cash = cash + income_fixed[t] * (1.0 - tax) + ss_base[t] * p * ss_net
         cash = cash - expense_fixed[t] - ret_spend_base[t] * p + one_time[t]
 
         cash = cash - contrib_inv[t]
@@ -232,7 +323,9 @@ def _run_paths(
         debt = debt - pay
 
         # Forced RMDs: annual distribution from the member's tax-deferred
-        # bucket, taxed at the effective rate, remainder to cash.
+        # bucket. Flat mode taxes it at the effective rate; bracket mode
+        # credits it gross less withholding and lets December tax it exactly
+        # — this is what makes "RMDs fill brackets" visible.
         if track_td and t in rmd_at:
             for i, divisor in rmd_at[t]:
                 if rmd_first.get(i) == t:
@@ -240,19 +333,54 @@ def _run_paths(
                 dist = td[i] / divisor
                 td[i] = td[i] - dist
                 invested = invested - dist
-                cash = cash + dist * (1.0 - tax)
+                if bracket_mode:
+                    cash = cash + dist * (1.0 - withhold)
+                    wd_acc = wd_acc + dist
+                    withheld = withheld + dist * withhold
+                else:
+                    cash = cash + dist * (1.0 - tax)
 
         # Cover negative cash from invested, grossing up for withdrawal tax.
         shortfall = np.maximum(-cash, 0.0)
-        gross = shortfall / (1.0 - wtax)
-        w = np.minimum(gross, np.maximum(invested, 0.0))
-        inv_before = invested
-        invested = invested - w
-        cash = cash + w * (1.0 - wtax)
+        if bracket_mode:
+            # Gross up at the current-year marginal-rate estimate
+            # (TAX-DESIGN §4): g = S / (1 - r * m̂). The retirement_share
+            # slice of the withdrawal is deemed ordinary income; the taxable
+            # side is return of basis (no LTCG in phase 2). Estimate error
+            # is corrected exactly at the December settle-up.
+            if shortfall.any():
+                m_hat = _marginal_rate_estimate(ord_acc + wd_acc, ss_acc, status, p)
+                wrate = r_share * m_hat
+            else:
+                wrate = 0.0
+            gross = shortfall / (1.0 - wrate)
+            w = np.minimum(gross, np.maximum(invested, 0.0))
+            inv_before = invested
+            invested = invested - w
+            cash = cash + w * (1.0 - wrate)
+            wd_acc = wd_acc + r_share * w
+            withheld = withheld + w * wrate
+        else:
+            gross = shortfall / (1.0 - wtax)
+            w = np.minimum(gross, np.maximum(invested, 0.0))
+            inv_before = invested
+            invested = invested - w
+            cash = cash + w * (1.0 - wtax)
         if track_td:
             # Withdrawals shrink tax-deferred sub-buckets pro-rata.
             denom = np.where(inv_before > 0.0, inv_before, 1.0)
             td = td * np.where(inv_before > 0.0, 1.0 - w / denom, 1.0)
+
+        # Bracket mode: December settlement on the plan-year grid. Computed
+        # AFTER the shortfall step so the year's withdrawals are included and
+        # the annual tax is exact; a residual negative cash balance rolls
+        # into January's shortfall withdrawal (next tax year's income).
+        if bracket_mode and t % 12 == 11:
+            year = compute_tax_year(TaxYearInput(
+                filing_status=status, ordinary_income=ord_acc, ss_benefits=ss_acc,
+                tax_deferred_withdrawals=wd_acc, price_index=p,
+            ))
+            cash = cash - (np.asarray(year.tax, dtype=float) - withheld)
 
         invested = invested * f_invested[:, t]
         if track_td:
