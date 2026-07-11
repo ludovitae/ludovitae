@@ -35,6 +35,32 @@ ACCOUNT_SPEC = {
     "balance": Num, "growth_rate_pct": (int, float, type(None)),
     "asset_class": (str, type(None)), "member_id": (int, type(None)),
     "include_in_net_worth": bool, "notes": str, "created_at": str,
+    # v1.2 import freshness
+    "last_import_at": (str, type(None)),
+    "newest_transaction_date": (str, type(None)),
+    "staleness_days": (int, type(None)), "track_freshness": bool,
+    "freshness": str,
+}
+TXN_SPEC = {
+    "id": int, "account_id": int, "date": str, "amount": Num, "payee": str,
+    "category": (str, type(None)),
+    # v1.2 transfers & categorization
+    "transfer_pair_id": (int, type(None)), "category_source": str,
+}
+RULE_SPEC = {
+    "id": int, "pattern": str, "match": str, "field": str, "category": str,
+    "priority": int,
+}
+RECURRING_SPEC = {
+    "payee": str, "category": (str, type(None)), "cadence": str,
+    "typical_amount": Num, "last_amount": Num, "price_change_pct": Num,
+    "last_date": str, "first_seen": str, "occurrences": int, "active": bool,
+    "monthly_equivalent": Num,
+}
+AI_SETTINGS_SPEC = {
+    "has_api_key": bool, "api_key_last4": (str, type(None)), "enabled": bool,
+    "monthly_budget_usd": Num, "spend_this_month_usd": Num,
+    "tokens_this_month": dict,
 }
 FLOW_SPEC = {
     "id": int, "name": str, "kind": str, "amount_monthly": Num,
@@ -310,12 +336,86 @@ def test_contract_walk_every_endpoint(authed):
 
     txns = authed.get(f"/api/v1/transactions?account_id={acc_id}")
     assert isinstance(txns.json(), list)
-    _assert_shape(
-        txns.json()[0],
-        {"id": int, "account_id": int, "date": str, "amount": Num,
-         "payee": str, "category": (str, type(None))},
-        "GET /transactions[0]",
+    _assert_shape(txns.json()[0], TXN_SPEC, "GET /transactions[0]")
+    txn_ids = [t["id"] for t in txns.json()]
+
+    # --- v1.2: transfers, rules, categorization, analytics, AI admin -------
+    cands = authed.get("/api/v1/transfers/candidates")
+    assert cands.status_code == 200 and isinstance(cands.json(), list)
+    for cand in cands.json():
+        _assert_shape(cand, {"score": Num, "txns": list}, "transfers/candidates[]")
+        for leg in cand["txns"]:
+            _assert_shape(leg, TXN_SPEC, "transfers/candidates[].txns[]")
+
+    bulk = authed.post(
+        "/api/v1/transactions/categorize",
+        json={"ids": txn_ids[:1], "category": "dining"},
     )
+    assert bulk.status_code == 200
+    _assert_shape(bulk.json(), {"updated": int}, "POST /transactions/categorize")
+    assert isinstance(authed.get("/api/v1/transactions?uncategorized=1").json(), list)
+
+    rule = authed.post(
+        "/api/v1/rules",
+        json={"pattern": "coffee", "category": "dining", "priority": 5},
+    )
+    assert rule.status_code == 201
+    _assert_shape(rule.json(), RULE_SPEC, "POST /rules")
+    rule_id = rule.json()["id"]
+    _assert_shape(authed.get("/api/v1/rules").json()[0], RULE_SPEC, "GET /rules[0]")
+    _assert_shape(
+        authed.patch(f"/api/v1/rules/{rule_id}", json={"priority": 1}).json(),
+        RULE_SPEC, "PATCH /rules/{id}",
+    )
+    applied = authed.post("/api/v1/rules/apply")
+    assert applied.status_code == 200
+    _assert_shape(applied.json(), {"recategorized": int}, "POST /rules/apply")
+
+    suggest = authed.post("/api/v1/categorize/suggest", json={"payees": ["NETFLIX.COM", "???"]})
+    assert suggest.status_code == 200
+    body = suggest.json()
+    assert set(body) == {"suggestions", "source"} and body["source"] == "heuristic"
+    for s in body["suggestions"]:
+        _assert_shape(
+            s, {"payee": str, "category": (str, type(None)), "confidence": Num},
+            "categorize/suggest.suggestions[]",
+        )
+
+    summary = authed.get("/api/v1/spending/summary").json()
+    assert set(summary) == {"months", "categories", "grand_total"}
+    for cat in summary["categories"]:
+        _assert_shape(cat, {"category": str, "totals": list, "total": Num},
+                      "spending/summary.categories[]")
+        assert len(cat["totals"]) == len(summary["months"])
+    recurring = authed.get("/api/v1/spending/recurring")
+    assert recurring.status_code == 200
+    for charge in recurring.json():
+        _assert_shape(charge, RECURRING_SPEC, "spending/recurring[]")
+    hotspots = authed.get("/api/v1/spending/hotspots").json()
+    assert set(hotspots) == {
+        "category_spikes", "top_merchants", "price_increases", "possibly_forgotten",
+    }
+    forecast = authed.get("/api/v1/spending/forecast?months=4").json()
+    assert set(forecast) == {"months", "recurring", "variable_by_category", "total"}
+    assert len(forecast["months"]) == len(forecast["recurring"]) == len(forecast["total"]) == 4
+
+    ai = authed.get("/api/v1/settings/ai")
+    assert ai.status_code == 200
+    _assert_shape(ai.json(), AI_SETTINGS_SPEC, "GET /settings/ai")
+    assert set(ai.json()["tokens_this_month"]) == {"input", "output"}
+    put_ai = authed.put(
+        "/api/v1/settings/ai",
+        json={"api_key": "sk-ant-test-1234x7Q2", "enabled": True, "monthly_budget_usd": 5.0},
+    )
+    assert put_ai.status_code == 200
+    _assert_shape(put_ai.json(), AI_SETTINGS_SPEC, "PUT /settings/ai")
+    # the key itself must never be echoed anywhere in the response
+    assert "sk-ant-test-1234x7Q2" not in put_ai.text
+    assert put_ai.json()["api_key_last4"] == "x7Q2"
+    usage = authed.get("/api/v1/ai/usage?months=6")
+    assert usage.status_code == 200 and isinstance(usage.json(), list)
+
+    assert authed.delete(f"/api/v1/rules/{rule_id}").status_code == 204
 
     # scenarios GET(list incl. baseline)/POST(201)/GET one/PATCH
     scn_list = authed.get("/api/v1/scenarios").json()
@@ -362,9 +462,15 @@ def test_contract_walk_every_endpoint(authed):
     _assert_shape(
         dash.json(),
         {"net_worth": Num, "assets": Num, "liabilities": Num, "history": list,
-         "by_type": dict, "goals_summary": list, "monthly_surplus": Num},
+         "by_type": dict, "goals_summary": list, "monthly_surplus": Num,
+         "stale_accounts": list},
         "GET /dashboard",
     )
+    for sa in dash.json()["stale_accounts"]:
+        _assert_shape(
+            sa, {"id": int, "name": str, "freshness": str, "days_since_import": int},
+            "dashboard.stale_accounts[]",
+        )
     for h in dash.json()["history"]:
         _assert_shape(h, {"date": str, "net_worth": Num}, "dashboard.history[]")
     for gs in dash.json()["goals_summary"]:
@@ -395,7 +501,10 @@ def test_contract_walk_every_endpoint(authed):
 def test_401_shape_on_every_unauthenticated_read(client):
     for path in ("/profile", "/household", "/spending", "/spending/observed",
                  "/accounts", "/flows", "/goals", "/scenarios",
-                 "/dashboard", "/settings", "/transactions"):
+                 "/dashboard", "/settings", "/transactions",
+                 "/transfers/candidates", "/rules", "/spending/summary",
+                 "/spending/recurring", "/spending/hotspots",
+                 "/spending/forecast", "/settings/ai", "/ai/usage"):
         resp = client.get(f"/api/v1{path}")
         assert resp.status_code == 401, path
         assert resp.json() == {

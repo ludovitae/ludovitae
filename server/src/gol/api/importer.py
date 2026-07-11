@@ -10,11 +10,13 @@ from sqlalchemy import select
 
 from gol.api.common import Db, get_or_404
 from gol.auth.deps import Authenticated
+from gol.categorization import categorize_new_transaction, load_rules
 from gol.errors import ApiError
 from gol.importers import csv as csv_importer
 from gol.importers import ofx as ofx_importer
 from gol.importers.base import ParsedTransaction, dedupe_hash
-from gol.models import Account, BalanceSnapshot, Transaction
+from gol.models import Account, BalanceSnapshot, Transaction, utcnow
+from gol.pairing import run_auto_pairing
 
 router = APIRouter(tags=["import"])
 
@@ -97,6 +99,7 @@ async def import_commit(
             select(Transaction.dedupe_hash).where(Transaction.account_id == account_id)
         ).scalars()
     )
+    rules = load_rules(db)
     imported = skipped = 0
     for txn in parsed:
         digest = dedupe_hash(account_id, txn)
@@ -104,12 +107,13 @@ async def import_commit(
             skipped += 1
             continue
         existing.add(digest)
-        db.add(
-            Transaction(
-                account_id=account_id, date=txn.date, amount=txn.amount,
-                payee=txn.payee, category=txn.category, dedupe_hash=digest,
-            )
+        row = Transaction(
+            account_id=account_id, date=txn.date, amount=txn.amount,
+            payee=txn.payee, dedupe_hash=digest,
         )
+        # layered categorization: file-supplied (manual) > rules > heuristics
+        categorize_new_transaction(row, rules, account.type, txn.category)
+        db.add(row)
         imported += 1
 
     if update_balance and balance is not None:
@@ -123,5 +127,12 @@ async def import_commit(
             db.add(BalanceSnapshot(account_id=account.id, date=date, amount=balance))
         else:
             snapshot.amount = balance
+
+    # freshness: every commit counts as an import, even an all-duplicate one
+    account.last_import_at = utcnow()
+    db.flush()  # assign ids before pairing (pair id = smaller txn id)
+    # transfer auto-pairing runs after every import commit; idempotent because
+    # only unpaired rows are considered and dedupe prevents duplicate rows.
+    run_auto_pairing(db)
     db.flush()
     return {"imported": imported, "skipped_duplicates": skipped}
