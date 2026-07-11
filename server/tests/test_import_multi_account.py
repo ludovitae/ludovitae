@@ -156,8 +156,8 @@ def test_amex_multiline_quoted_fields_parse_as_records(authed):
     assert len(pv["columns"]) == 13
     assert pv["matched_preset"]["name"] == "American Express — Activity"
     assert pv["matched_preset"]["flip_signs"] is True
-    # 6 logical records despite embedded newlines in quoted fields
-    assert pv["account_groups"][0]["rows"] == 6
+    # 7 logical records despite embedded newlines + escaped quotes
+    assert pv["account_groups"][0]["rows"] == 7
     assert pv["account_groups"][0]["number_masked"] == "···7001"
 
 
@@ -171,12 +171,14 @@ def test_amex_commit_flip_normalize_and_heuristic_categories(authed):
             {key: {"new_account": {"name": "Demo Card", "type": "credit_card"}}}
         ),
     ).json()
-    assert result["imported"] == 6
+    assert result["imported"] == 7
     account_id = result["accounts"][0]["account_id"]
     rows = _txns(authed, account_id)
     by_payee = {t["payee"]: t for t in rows}
     # padded payees normalized to single spaces
     assert "BULLSEYE MART SPRINGFIELD OR" in by_payee
+    # escaped quotes inside quoted fields survive parsing
+    assert 'THE "CORNER" DELI PORTLAND OR' in by_payee
     # charges flipped negative; the payment flipped positive
     assert by_payee["BULLSEYE MART SPRINGFIELD OR"]["amount"] == -84.12
     assert by_payee["ONLINE PAYMENT - THANK YOU"]["amount"] == 250.00
