@@ -1,0 +1,40 @@
+# Keep the build context small: the image only needs server/ and web/ sources.
+.git
+.github
+.claude
+.gitignore
+.containerignore
+Containerfile
+coordination
+docs
+README.md
+LICENSE
+
+# data & secrets — never in an image
+data
+*.db
+*.db-*
+*.sqlite3
+.env
+*.pem
+*.key
+*.crt
+
+# python build/dev artifacts
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.pytest_cache
+**/.ruff_cache
+**/.coverage
+**/htmlcov
+server/dist
+
+# node — dependencies are installed and the SPA built inside the container
+web/node_modules
+web/dist
+
+# editors / os
+**/.DS_Store
+**/.idea
+**/*.swp
