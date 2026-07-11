@@ -26,10 +26,12 @@ Remote: github.com/ludovitae/ludovitae. Owner decision: **the owner merges.**
   independently, what was read, rulings, test counts). CI must be green.
 - The owner reviews and merges. The coordinator never merges to main.
   Release tagging still follows the Releases section, on the merged commit.
-- Owner-initiated work may arrive as **GitHub issues**; the coordinator
-  triages issues into tasks here (issue link in the task file). Known queued:
-  owner will file the `gol`→`ludovitae` package-rename issue after the
-  current PRs merge — do not start the rename before that issue exists.
+- **GitHub issues are the board** (owner decision 2026-07-11; BOARD.md is
+  archived). All work is tracked as issues; the coordinator triages each
+  issue into a `coordination/tasks/T-###` file (issue linked both ways),
+  agents execute, the PR closes the issue (`Closes #N`). Known queued:
+  owner will file the `gol`→`ludovitae` package-rename issue — do not start
+  the rename before that issue exists.
 
 ## Git workflow (pre-GitHub, historical)
 

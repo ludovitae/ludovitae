@@ -1,4 +1,13 @@
-# Board
+# Board — ARCHIVED 2026-07-11
+
+**The live board is now GitHub**: issues at
+https://github.com/ludovitae/ludovitae/issues (open items migrated as #4–#8)
+and the "Ludovitae board" Project once token permissions allow. This file is
+frozen history; do not update it. New work arrives as GitHub issues; the
+coordinator triages issues into `coordination/tasks/` files (issue linked)
+for agent execution.
+
+# Board (final state at archive time)
 
 | ID | Task | Owner | Branch | Status |
 |---|---|---|---|---|
