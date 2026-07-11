@@ -140,6 +140,178 @@ def _seed_card_transactions(db, card_id: int, checking_id: int) -> int:
     return count
 
 
+def seed_demo(db) -> dict:
+    """Populate the demo household into an open session (no commit) —
+    callable in-process by POST /admin/reset mode=demo (#27) as well as the
+    CLI wrapper below. Assumes the financial tables are empty (fresh DB or
+    just wiped); the spending starter category, if present, is replaced."""
+    today = dt.date.today()
+    profile = get_or_create_profile(db)
+    profile.annual_retirement_spending = 80_000.0
+    profile.inflation_pct = 2.5
+    # null = bracket-aware tax model (T-012 phase 2); fresh seeds use it
+    profile.effective_tax_rate_pct = None
+    profile.monthly_savings_target = 2_100.0
+    get_or_create_settings(db)
+
+    # household: staggered ages and retirements, plus a child
+    brian = HouseholdMember(
+        name="Brian", role="self", birth_year=today.year - 46, life_expectancy=92,
+        retirement_age=65, ss_monthly_at_fra=2_200.0, ss_claim_age=67,
+    )
+    dana = HouseholdMember(
+        name="Dana", role="partner", birth_year=today.year - 43, life_expectancy=94,
+        retirement_age=67, ss_monthly_at_fra=1_900.0, ss_claim_age=65,
+    )
+    riley = HouseholdMember(
+        name="Riley", role="child", birth_year=today.year - 12, life_expectancy=92,
+    )
+    db.add_all([brian, dana, riley])
+    db.flush()
+
+    accounts = [
+        Account(name="Everyday Checking", type="checking", institution="First National",
+                asset_class="cash"),
+        Account(name="Rainy-Day Savings", type="savings", institution="First National",
+                asset_class="cash"),
+        Account(name="Vanguard Brokerage", type="brokerage", institution="Vanguard",
+                asset_class="stocks"),
+        Account(name="Brian's 401(k)", type="retirement", institution="Fidelity",
+                asset_class="mixed", member_id=brian.id),
+        Account(name="Dana's 403(b)", type="retirement", institution="TIAA",
+                asset_class="mixed", member_id=dana.id),
+        Account(name="HSA", type="hsa", institution="Fidelity", asset_class="stocks",
+                member_id=brian.id),
+        Account(name="The House", type="property", growth_rate_pct=3.0,
+                notes="bought 2016"),
+        Account(name="Honda CR-V", type="vehicle", growth_rate_pct=-9.0),
+        Account(name="Mortgage", type="mortgage", institution="First National",
+                growth_rate_pct=5.25, notes="30yr fixed"),
+        Account(name="Sapphire Card", type="credit_card", institution="Chase"),
+    ]
+    for acc in accounts:
+        acc.track_freshness = acc.type in TRACK_FRESHNESS_TYPES
+    db.add_all(accounts)
+    db.flush()
+    checking, savings, brokerage, k401, b403, hsa, house, car, mortgage, card = accounts
+
+    balances_now = {
+        checking.id: 12_400.0, savings.id: 41_000.0, brokerage.id: 262_000.0,
+        k401.id: 388_000.0, b403.id: 176_000.0, hsa.id: 28_500.0,
+        house.id: 545_000.0, car.id: 21_000.0, mortgage.id: 296_000.0,
+        card.id: 1_850.0,
+    }
+    # ~18 months of monthly history with mild drift for the dashboard chart.
+    drift = {
+        checking.id: 0.000, savings.id: 0.003, brokerage.id: 0.008,
+        k401.id: 0.008, b403.id: 0.008, hsa.id: 0.007, house.id: 0.0025,
+        car.id: -0.008, mortgage.id: -0.0025, card.id: 0.000,
+    }
+    months = _month_starts(18)
+    for acc_id, now_amount in balances_now.items():
+        for i, date in enumerate(months):
+            steps_back = len(months) - i
+            amount = now_amount / ((1.0 + drift[acc_id]) ** steps_back)
+            db.add(BalanceSnapshot(account_id=acc_id, date=date, amount=round(amount, 2)))
+        db.add(BalanceSnapshot(account_id=acc_id, date=today, amount=now_amount))
+
+    db.add_all([
+        Flow(name="Brian's salary (net of benefits)", kind="income",
+             amount_monthly=9_500.0, annual_growth_pct=3.0, category="salary",
+             member_id=brian.id, ends_at_retirement=True),
+        Flow(name="Dana's salary", kind="income", amount_monthly=6_800.0,
+             annual_growth_pct=3.0, category="salary", member_id=dana.id,
+             ends_at_retirement=True),
+        Flow(name="Subscriptions & misc", kind="expense", amount_monthly=150.0,
+             annual_growth_pct=2.5, category="living"),
+        Flow(name="Mortgage payment", kind="contribution", amount_monthly=2_150.0,
+             account_id=mortgage.id, category="housing"),
+        Flow(name="Brian's 401(k) contribution", kind="contribution",
+             amount_monthly=1_500.0, account_id=k401.id, category="retirement",
+             member_id=brian.id, ends_at_retirement=True),
+        Flow(name="Dana's 403(b) contribution", kind="contribution",
+             amount_monthly=900.0, account_id=b403.id, category="retirement",
+             member_id=dana.id, ends_at_retirement=True),
+        Flow(name="Brokerage auto-invest", kind="contribution", amount_monthly=600.0,
+             account_id=brokerage.id, category="investing", ends_at_retirement=True),
+    ])
+
+    # replace the migration's zero-amount starter category with real ones
+    for cat in db.execute(select(SpendingCategory)).scalars():
+        db.delete(cat)
+    db.add_all([
+        SpendingCategory(name="Housing & utilities", monthly_amount=1_150.0,
+                         kind="essential"),
+        SpendingCategory(name="Groceries", monthly_amount=950.0, kind="essential"),
+        SpendingCategory(name="Transport", monthly_amount=450.0, kind="essential"),
+        SpendingCategory(name="Kids & school", monthly_amount=550.0, kind="essential"),
+        SpendingCategory(name="Dining out", monthly_amount=500.0,
+                         kind="discretionary"),
+        SpendingCategory(name="Travel", monthly_amount=420.0, kind="discretionary",
+                         annual_growth_pct=1.0),
+        SpendingCategory(name="Everything else", monthly_amount=600.0,
+                         kind="discretionary"),
+    ])
+
+    txn_count = _seed_transactions(db, checking.id)
+    txn_count += _seed_card_transactions(db, card.id, checking.id)
+    db.flush()
+    # pair the checking→card payments exactly as an import would
+    paired = run_auto_pairing(db)
+
+    # v1.2 freshness demo: checking/card freshly imported, investment
+    # accounts a week old, savings well past the 35-day threshold (stale)
+    now = utcnow()
+    for acc in (checking, card):
+        acc.last_import_at = now
+    for acc in (brokerage, k401, b403, hsa):
+        acc.last_import_at = now - dt.timedelta(days=7)
+    savings.last_import_at = now - dt.timedelta(days=60)
+
+    db.add_all([
+        Goal(name="Sailboat", emoji="⛵", target_amount=60_000.0,
+             target_date=dt.date(today.year + 6, 6, 1), priority=2,
+             funded_amount=5_000.0, notes="the dream"),
+        Goal(name="College fund", emoji="🎓", target_amount=120_000.0,
+             target_date=dt.date(today.year + 8, 9, 1), priority=1,
+             funded_amount=35_000.0),
+        Goal(name="Kitchen remodel", emoji="🍳", target_amount=45_000.0,
+             target_date=dt.date(today.year + 2, 3, 1), priority=3,
+             funded_amount=12_000.0),
+    ])
+
+    db.add_all([
+        Scenario(
+            name="Retire at 55 / Dana at 60",
+            description="Both stop early; Dana claims Social Security at 62.",
+            params={
+                "retirement_age": 55,
+                "member_overrides": {
+                    str(dana.id): {"retirement_age": 60, "ss_claim_age": 62},
+                },
+                "monthly_savings_delta": 500.0,
+                "annual_retirement_spending": 70_000.0,
+                "events": [
+                    {"name": "Take up golf", "kind": "recurring_expense",
+                     "amount_monthly": 350.0, "start_age": 55},
+                ],
+            },
+        ),
+        Scenario(
+            name="Trim spending 10%",
+            description="Cut every spending category and expense a tenth.",
+            params={"spending_delta_pct": -10.0},
+        ),
+        Scenario(
+            name="Coast a little",
+            description="Ease off saving now, spend more on living.",
+            params={"monthly_savings_delta": -750.0},
+        ),
+    ])
+    db.flush()
+    return {"transactions": txn_count, "pairs": paired}
+
+
 def seed(force: bool = False) -> None:
     run_migrations()
     db = session_factory()()
@@ -147,175 +319,12 @@ def seed(force: bool = False) -> None:
         if db.execute(select(Account)).first() is not None and not force:
             print("database already has accounts; use --force to seed anyway")
             sys.exit(1)
-
-        today = dt.date.today()
-        profile = get_or_create_profile(db)
-        profile.annual_retirement_spending = 80_000.0
-        profile.inflation_pct = 2.5
-        # null = bracket-aware tax model (T-012 phase 2); fresh seeds use it
-        profile.effective_tax_rate_pct = None
-        profile.monthly_savings_target = 2_100.0
-        get_or_create_settings(db)
-
-        # household: staggered ages and retirements, plus a child
-        brian = HouseholdMember(
-            name="Brian", role="self", birth_year=today.year - 46, life_expectancy=92,
-            retirement_age=65, ss_monthly_at_fra=2_200.0, ss_claim_age=67,
-        )
-        dana = HouseholdMember(
-            name="Dana", role="partner", birth_year=today.year - 43, life_expectancy=94,
-            retirement_age=67, ss_monthly_at_fra=1_900.0, ss_claim_age=65,
-        )
-        riley = HouseholdMember(
-            name="Riley", role="child", birth_year=today.year - 12, life_expectancy=92,
-        )
-        db.add_all([brian, dana, riley])
-        db.flush()
-
-        accounts = [
-            Account(name="Everyday Checking", type="checking", institution="First National",
-                    asset_class="cash"),
-            Account(name="Rainy-Day Savings", type="savings", institution="First National",
-                    asset_class="cash"),
-            Account(name="Vanguard Brokerage", type="brokerage", institution="Vanguard",
-                    asset_class="stocks"),
-            Account(name="Brian's 401(k)", type="retirement", institution="Fidelity",
-                    asset_class="mixed", member_id=brian.id),
-            Account(name="Dana's 403(b)", type="retirement", institution="TIAA",
-                    asset_class="mixed", member_id=dana.id),
-            Account(name="HSA", type="hsa", institution="Fidelity", asset_class="stocks",
-                    member_id=brian.id),
-            Account(name="The House", type="property", growth_rate_pct=3.0,
-                    notes="bought 2016"),
-            Account(name="Honda CR-V", type="vehicle", growth_rate_pct=-9.0),
-            Account(name="Mortgage", type="mortgage", institution="First National",
-                    growth_rate_pct=5.25, notes="30yr fixed"),
-            Account(name="Sapphire Card", type="credit_card", institution="Chase"),
-        ]
-        for acc in accounts:
-            acc.track_freshness = acc.type in TRACK_FRESHNESS_TYPES
-        db.add_all(accounts)
-        db.flush()
-        checking, savings, brokerage, k401, b403, hsa, house, car, mortgage, card = accounts
-
-        balances_now = {
-            checking.id: 12_400.0, savings.id: 41_000.0, brokerage.id: 262_000.0,
-            k401.id: 388_000.0, b403.id: 176_000.0, hsa.id: 28_500.0,
-            house.id: 545_000.0, car.id: 21_000.0, mortgage.id: 296_000.0,
-            card.id: 1_850.0,
-        }
-        # ~18 months of monthly history with mild drift for the dashboard chart.
-        drift = {
-            checking.id: 0.000, savings.id: 0.003, brokerage.id: 0.008,
-            k401.id: 0.008, b403.id: 0.008, hsa.id: 0.007, house.id: 0.0025,
-            car.id: -0.008, mortgage.id: -0.0025, card.id: 0.000,
-        }
-        months = _month_starts(18)
-        for acc_id, now_amount in balances_now.items():
-            for i, date in enumerate(months):
-                steps_back = len(months) - i
-                amount = now_amount / ((1.0 + drift[acc_id]) ** steps_back)
-                db.add(BalanceSnapshot(account_id=acc_id, date=date, amount=round(amount, 2)))
-            db.add(BalanceSnapshot(account_id=acc_id, date=today, amount=now_amount))
-
-        db.add_all([
-            Flow(name="Brian's salary (net of benefits)", kind="income",
-                 amount_monthly=9_500.0, annual_growth_pct=3.0, category="salary",
-                 member_id=brian.id, ends_at_retirement=True),
-            Flow(name="Dana's salary", kind="income", amount_monthly=6_800.0,
-                 annual_growth_pct=3.0, category="salary", member_id=dana.id,
-                 ends_at_retirement=True),
-            Flow(name="Subscriptions & misc", kind="expense", amount_monthly=150.0,
-                 annual_growth_pct=2.5, category="living"),
-            Flow(name="Mortgage payment", kind="contribution", amount_monthly=2_150.0,
-                 account_id=mortgage.id, category="housing"),
-            Flow(name="Brian's 401(k) contribution", kind="contribution",
-                 amount_monthly=1_500.0, account_id=k401.id, category="retirement",
-                 member_id=brian.id, ends_at_retirement=True),
-            Flow(name="Dana's 403(b) contribution", kind="contribution",
-                 amount_monthly=900.0, account_id=b403.id, category="retirement",
-                 member_id=dana.id, ends_at_retirement=True),
-            Flow(name="Brokerage auto-invest", kind="contribution", amount_monthly=600.0,
-                 account_id=brokerage.id, category="investing", ends_at_retirement=True),
-        ])
-
-        # replace the migration's zero-amount starter category with real ones
-        for cat in db.execute(select(SpendingCategory)).scalars():
-            db.delete(cat)
-        db.add_all([
-            SpendingCategory(name="Housing & utilities", monthly_amount=1_150.0,
-                             kind="essential"),
-            SpendingCategory(name="Groceries", monthly_amount=950.0, kind="essential"),
-            SpendingCategory(name="Transport", monthly_amount=450.0, kind="essential"),
-            SpendingCategory(name="Kids & school", monthly_amount=550.0, kind="essential"),
-            SpendingCategory(name="Dining out", monthly_amount=500.0,
-                             kind="discretionary"),
-            SpendingCategory(name="Travel", monthly_amount=420.0, kind="discretionary",
-                             annual_growth_pct=1.0),
-            SpendingCategory(name="Everything else", monthly_amount=600.0,
-                             kind="discretionary"),
-        ])
-
-        txn_count = _seed_transactions(db, checking.id)
-        txn_count += _seed_card_transactions(db, card.id, checking.id)
-        db.flush()
-        # pair the checking→card payments exactly as an import would
-        paired = run_auto_pairing(db)
-
-        # v1.2 freshness demo: checking/card freshly imported, investment
-        # accounts a week old, savings well past the 35-day threshold (stale)
-        now = utcnow()
-        for acc in (checking, card):
-            acc.last_import_at = now
-        for acc in (brokerage, k401, b403, hsa):
-            acc.last_import_at = now - dt.timedelta(days=7)
-        savings.last_import_at = now - dt.timedelta(days=60)
-
-        db.add_all([
-            Goal(name="Sailboat", emoji="⛵", target_amount=60_000.0,
-                 target_date=dt.date(today.year + 6, 6, 1), priority=2,
-                 funded_amount=5_000.0, notes="the dream"),
-            Goal(name="College fund", emoji="🎓", target_amount=120_000.0,
-                 target_date=dt.date(today.year + 8, 9, 1), priority=1,
-                 funded_amount=35_000.0),
-            Goal(name="Kitchen remodel", emoji="🍳", target_amount=45_000.0,
-                 target_date=dt.date(today.year + 2, 3, 1), priority=3,
-                 funded_amount=12_000.0),
-        ])
-
-        db.add_all([
-            Scenario(
-                name="Retire at 55 / Dana at 60",
-                description="Both stop early; Dana claims Social Security at 62.",
-                params={
-                    "retirement_age": 55,
-                    "member_overrides": {
-                        str(dana.id): {"retirement_age": 60, "ss_claim_age": 62},
-                    },
-                    "monthly_savings_delta": 500.0,
-                    "annual_retirement_spending": 70_000.0,
-                    "events": [
-                        {"name": "Take up golf", "kind": "recurring_expense",
-                         "amount_monthly": 350.0, "start_age": 55},
-                    ],
-                },
-            ),
-            Scenario(
-                name="Trim spending 10%",
-                description="Cut every spending category and expense a tenth.",
-                params={"spending_delta_pct": -10.0},
-            ),
-            Scenario(
-                name="Coast a little",
-                description="Ease off saving now, spend more on living.",
-                params={"monthly_savings_delta": -750.0},
-            ),
-        ])
+        stats = seed_demo(db)
         db.commit()
         print(
             "seeded demo household: 3 members, 10 accounts, 7 flows, "
-            f"7 spending categories, {txn_count} transactions "
-            f"({paired} transfer pairs), 3 goals, 3 scenarios"
+            f"7 spending categories, {stats['transactions']} transactions "
+            f"({stats['pairs']} transfer pairs), 3 goals, 3 scenarios"
         )
     finally:
         db.close()

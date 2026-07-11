@@ -38,6 +38,7 @@ log = logging.getLogger(__name__)
 
 PRE_MIGRATION_KEEP = 5
 DAILY_KEEP = 14
+PRE_RESET_KEEP = 5  # #27: same rotation family as pre-migration
 
 
 def backups_dir() -> Path:
@@ -108,6 +109,21 @@ def pre_migration_backup() -> Path | None:
     dest = backups_dir() / f"pre-migration-{current or 'unstamped'}-{stamp}.db"
     _sqlite_backup(db_file, dest)
     _rotate("pre-migration-", PRE_MIGRATION_KEEP)
+    return dest
+
+
+def pre_reset_backup() -> Path | None:
+    """#27: consistent snapshot taken immediately BEFORE POST /admin/reset
+    wipes the financial tables (``pre-reset-<utc-ts>.db``, keep newest 5).
+    No-op (returns None) when the DB file is absent or empty — a truly fresh
+    install has nothing to lose."""
+    db_file = config.db_path()
+    if not db_file.exists() or db_file.stat().st_size == 0:
+        return None
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    dest = backups_dir() / f"pre-reset-{stamp}.db"
+    _sqlite_backup(db_file, dest)
+    _rotate("pre-reset-", PRE_RESET_KEEP)
     return dest
 
 
