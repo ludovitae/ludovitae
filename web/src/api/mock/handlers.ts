@@ -298,8 +298,11 @@ export async function mockRequest<T>(
   query?: Record<string, string | number | undefined>,
 ): Promise<T> {
   await latency()
-  const r = route(method, path, json, form, query)
-  return (await r) as T
+  const r = await route(method, path, json, form, query)
+  // Clone like a real wire: handlers return live references into the mock db;
+  // handing those to React Query lets in-place mutations alias the cache and
+  // suppress re-renders (fresh objects per response, like JSON over HTTP).
+  return (r === undefined ? undefined : structuredClone(r)) as T
 }
 
 async function route(
