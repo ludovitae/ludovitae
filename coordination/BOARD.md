@@ -27,6 +27,19 @@
   settings "hint" fields (e.g. base salary $) as calibration anchors, not
   simulation inputs. Owner's comp is complicated (base + bonus + RSU + ESPP)
   — design for lumpy, multi-source income from the start.
+- v1.3 candidate — **equity grants (RSU granted-vs-distributed gap)**, owner
+  ask 2026-07-11: model grants as a vesting schedule, NOT balances. Unvested
+  value is excluded from net worth (shown separately as "unvested equity");
+  at each vest the owner's plan auto-sells to cover taxes (sell-to-cover), so
+  distributed value = vested value × (1 − withholding_pct), and since the
+  owner sells at vest anyway, vests land as scheduled lumpy CASH income in
+  the sim (share-price risk between now and vest can ride the stocks asset
+  class vol). Design sketch: Grant entity {member, total_value or
+  shares×price, vest schedule (e.g. quarterly N years), withholding_pct,
+  sell_at_vest: bool}; engine turns the schedule into dated one-time inflows;
+  future vests visible on the chart like milestones. Note for later: flat
+  supplemental withholding (22%) often under-withholds vs actual marginal —
+  surface the gap, don't hide it.
 - Visual QA pass of milestone chips in both themes on a real browser (T-006
   residual risk; no browser on the build host).
 - Game theme: full illustration pass (v1 shipped a credible token skin).
