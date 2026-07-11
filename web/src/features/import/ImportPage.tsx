@@ -48,7 +48,7 @@ type Step =
   | { at: 'done'; result: ImportCommitResult; accountName: string }
 
 /** #26: guess a sensible account type from a provider account name. */
-export function guessAccountType(name: string | null | undefined): AccountType {
+function guessAccountType(name: string | null | undefined): AccountType {
   const n = (name ?? '').toLowerCase()
   if (/401|403|ira|roth|retirement|pension/.test(n)) return 'retirement'
   if (/hsa/.test(n)) return 'hsa'
