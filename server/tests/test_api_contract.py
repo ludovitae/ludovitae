@@ -73,10 +73,20 @@ SCENARIO_SPEC = {
     "id": int, "name": str, "description": str, "is_baseline": bool, "params": dict,
 }
 SIM_SPEC = {
-    "engine_version": str, "n_paths": int, "seed": int, "start_year": int,
+    "engine_version": str, "engine_notes": list, "assumptions": dict,
+    "n_paths": int, "seed": int, "start_year": int,
     "ages": list, "deterministic": dict, "percentiles": dict,
     "success_probability": Num, "median_ruin_age": (int, float, type(None)),
     "ending_net_worth": dict, "milestones": list,
+}
+ASSUMPTIONS_SPEC = {
+    "market": dict, "inflation_pct": Num, "effective_tax_rate_pct": Num,
+    "ss_taxable_share": Num, "engine_version": str,
+}
+ASSUMPTIONS_MARKET_SPEC = {
+    "stocks_mean_pct": Num, "stocks_vol_pct": Num,
+    "bonds_mean_pct": Num, "bonds_vol_pct": Num,
+    "cash_mean_pct": Num, "cash_vol_pct": Num,
 }
 GOALS_SUMMARY_SPEC = {
     "id": int, "name": str, "emoji": (str, type(None)), "target_amount": Num,
@@ -87,6 +97,13 @@ GOALS_SUMMARY_SPEC = {
 
 def _assert_sim_shape(body: dict, where: str) -> None:
     _assert_shape(body, SIM_SPEC, where)
+    _assert_shape(body["assumptions"], ASSUMPTIONS_SPEC, f"{where}.assumptions")
+    _assert_shape(
+        body["assumptions"]["market"], ASSUMPTIONS_MARKET_SPEC,
+        f"{where}.assumptions.market",
+    )
+    assert body["assumptions"]["engine_version"] == body["engine_version"]
+    assert all(isinstance(note, str) for note in body["engine_notes"])
     assert set(body["percentiles"]) == {"p10", "p25", "p50", "p75", "p90"}
     assert set(body["deterministic"]) == {
         "net_worth", "invested", "cash", "property", "debt"

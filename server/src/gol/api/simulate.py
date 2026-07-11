@@ -11,14 +11,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
-from gol import ENGINE_VERSION
+from gol import ENGINE_NOTES, ENGINE_VERSION
 from gol.api.common import Db, get_or_404
 from gol.api.scenarios import BASELINE, ScenarioParams, validate_event
 from gol.assembly import build_plan_inputs
 from gol.auth.deps import Authenticated
 from gol.errors import ApiError
 from gol.models import Scenario, SimulationRun
-from gol.sim import run_simulation
+from gol.sim import SS_TAXABLE_SHARE, PlanInputs, run_simulation
 
 router = APIRouter(tags=["simulate"])
 
@@ -44,6 +44,23 @@ def _resolve_params(db: DbSession, scenario_id: int) -> dict:
     return get_or_404(db, Scenario, scenario_id, "scenario_not_found").params or {}
 
 
+def _assumptions(inputs: PlanInputs) -> dict:
+    """Model assumptions the simulation actually ran with (from the resolved
+    PlanInputs — scenario overrides included — never re-read from the DB)."""
+    m = inputs.market
+    return {
+        "market": {
+            "stocks_mean_pct": m.stocks_mean_pct, "stocks_vol_pct": m.stocks_vol_pct,
+            "bonds_mean_pct": m.bonds_mean_pct, "bonds_vol_pct": m.bonds_vol_pct,
+            "cash_mean_pct": m.cash_mean_pct, "cash_vol_pct": m.cash_vol_pct,
+        },
+        "inflation_pct": inputs.inflation_mean_pct,
+        "effective_tax_rate_pct": inputs.effective_tax_rate_pct,
+        "ss_taxable_share": SS_TAXABLE_SHARE,
+        "engine_version": ENGINE_VERSION,
+    }
+
+
 def _run_cached(db: DbSession, params: dict, n_paths: int, seed: int) -> dict:
     inputs = build_plan_inputs(db, params)
     key_material = json.dumps(
@@ -56,7 +73,12 @@ def _run_cached(db: DbSession, params: dict, n_paths: int, seed: int) -> dict:
     ).scalar_one_or_none()
     if cached is not None:
         return cached.result
-    result = {"engine_version": ENGINE_VERSION, **run_simulation(inputs, n_paths, seed)}
+    result = {
+        "engine_version": ENGINE_VERSION,
+        "engine_notes": list(ENGINE_NOTES),
+        "assumptions": _assumptions(inputs),
+        **run_simulation(inputs, n_paths, seed),
+    }
     db.add(
         SimulationRun(
             cache_key=cache_key, engine_version=ENGINE_VERSION,
