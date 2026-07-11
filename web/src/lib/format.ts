@@ -20,15 +20,30 @@ export function formatMoney(value: number, opts?: { cents?: boolean }): string {
   return opts?.cents ? fullCents.format(value) : full.format(value)
 }
 
+type Unit = readonly [number, string]
+const BASE_UNIT: Unit = [1, '']
+const UNITS: readonly Unit[] = [BASE_UNIT, [1e3, 'K'], [1e6, 'M'], [1e9, 'B']]
+
 /** Compact chart form: $1.4M, $812K, -$3.2K, $950. */
 export function formatMoneyCompact(value: number): string {
   if (!Number.isFinite(value)) return '—'
   const sign = value < 0 ? '-' : ''
   const abs = Math.abs(value)
-  if (abs >= 1e9) return `${sign}$${trim(abs / 1e9)}B`
-  if (abs >= 1e6) return `${sign}$${trim(abs / 1e6)}M`
-  if (abs >= 1e3) return `${sign}$${trim(abs / 1e3)}K`
-  return `${sign}$${Math.round(abs)}`
+  // Largest unit that fits.
+  let chosen: Unit = BASE_UNIT
+  for (const unit of UNITS) {
+    if (abs < unit[0]) break
+    chosen = unit
+  }
+  // Rounding within a unit can tip a value up to "1000" of that unit
+  // (e.g. 999_500 → "$1000K"); when it does, promote to the next unit
+  // ("$1M"). One level is always enough — dividing by 1000 lands near 1.0.
+  const next = UNITS.find((u) => u[0] === chosen[0] * 1000)
+  if (next && trim(abs / chosen[0]) === '1000') chosen = next
+  const [factor, suffix] = chosen
+  // Whole dollars in the base unit; one-decimal compact form above it.
+  const shown = factor === 1 ? String(Math.round(abs)) : trim(abs / factor)
+  return `${sign}$${shown}${suffix}`
 }
 
 function trim(n: number): string {
