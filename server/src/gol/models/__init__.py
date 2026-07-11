@@ -41,6 +41,9 @@ PROPERTY_TYPES = ("property", "vehicle", "other_asset")
 ASSET_CLASSES = ("stocks", "bonds", "cash", "mixed")
 FLOW_KINDS = ("income", "expense", "contribution")
 MEMBER_ROLES = ("self", "partner", "child", "other")
+# Only adult members drive the sim horizon and timing schedules
+# (coordinator ruling 2026-07-11; docs/API.md household section).
+ADULT_ROLES = ("self", "partner", "other")
 SPENDING_KINDS = ("essential", "discretionary")
 
 

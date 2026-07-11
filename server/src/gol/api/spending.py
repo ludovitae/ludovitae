@@ -70,6 +70,11 @@ def put_spending(body: SpendingBody, db: Db, _: Authenticated):
     }
     keep: set[int] = set()
     for cat in body.categories:
+        if cat.id is not None and cat.id not in existing:
+            raise ApiError(
+                404, "category_not_found",
+                f"spending category {cat.id} not found (omit id to create)",
+            )
         row = existing.get(cat.id) if cat.id is not None else None
         if row is not None:
             row.name = cat.name

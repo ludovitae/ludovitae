@@ -80,6 +80,46 @@ def test_simulate_member_overrides_move_milestones(authed):
     assert dana_ss[0]["label"] == "Dana claims Social Security (70% of FRA)"
 
 
+def test_child_never_extends_horizon(authed):
+    """Ruling 2026-07-11: horizon = latest life expectancy among ADULT
+    members; a young child (decades of remaining life expectancy) must not
+    stretch the simulation."""
+    _setup_plan(authed)  # self: born 1980, le 92
+    authed.post(
+        "/api/v1/household",
+        json={"name": "Dana", "role": "partner", "birth_year": 1983,
+              "life_expectancy": 94},
+    )
+    authed.post(
+        "/api/v1/household",
+        json={"name": "Riley", "role": "child", "birth_year": 2014,
+              "life_expectancy": 92},
+    )
+    body = authed.post(
+        "/api/v1/simulate", json={"scenario_id": 0, "seed": 2, "n_paths": 100}
+    ).json()
+    # horizon ends with the oldest-living ADULT: Dana (born 1983, le 94) is
+    # alive through 2077, when self (born 1980) is 97 — not the child's 2106.
+    assert body["ages"][-1] == 97
+
+
+def test_child_role_creates_no_schedules_or_milestones(authed):
+    """Even if a child member carries retirement/SS fields, the sim ignores
+    them: no milestones, no horizon effect, no household-transition effect."""
+    _setup_plan(authed)
+    child_id = authed.post(
+        "/api/v1/household",
+        json={"name": "Riley", "role": "child", "birth_year": 2014,
+              "life_expectancy": 92, "retirement_age": 70,
+              "ss_monthly_at_fra": 1_000.0, "ss_claim_age": 70},
+    ).json()["id"]
+    body = authed.post(
+        "/api/v1/simulate", json={"scenario_id": 0, "seed": 2, "n_paths": 100}
+    ).json()
+    assert body["ages"][-1] == 92  # self's own life expectancy caps the plan
+    assert not any(m["member_id"] == child_id for m in body["milestones"])
+
+
 def test_simulate_spending_delta_pct_cuts_spending(authed):
     _setup_plan(authed)
     authed.put(

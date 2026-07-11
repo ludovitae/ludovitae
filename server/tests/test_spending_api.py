@@ -68,6 +68,19 @@ def test_put_spending_validation(authed):
     assert empty_ok.json()["categories"] == []
 
 
+def test_put_spending_unknown_id_404(authed):
+    """Ruling 2026-07-11: ids present = update in place — an id that does
+    not exist is a client error, not a silent create."""
+    resp = authed.put(
+        "/api/v1/spending",
+        json={"categories": [
+            {"id": 4242, "name": "Ghost", "monthly_amount": 1.0, "kind": "essential"},
+        ], "monthly_savings_target": 0},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "category_not_found"
+
+
 def test_observed_empty_transactions_returns_zeros(authed):
     body = authed.get("/api/v1/spending/observed").json()
     assert body["months"] == 12

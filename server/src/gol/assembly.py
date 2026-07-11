@@ -20,6 +20,7 @@ from sqlalchemy.orm import selectinload
 
 from gol.errors import ApiError
 from gol.models import (
+    ADULT_ROLES,
     CASH_TYPES,
     INVESTABLE_TYPES,
     LIABILITY_TYPES,
@@ -134,9 +135,12 @@ def build_plan_inputs(
     overrides: dict = params.get("member_overrides") or {}
     # Top-level retirement_age is sugar for the self member's override; an
     # explicit member_overrides entry for self wins over the sugar.
+    # Children never drive timing: no retirement/SS/RMD schedules, and they
+    # never extend the horizon (coordinator ruling 2026-07-11).
+    adults = [m for m in members if m.role in ADULT_ROLES]
     retirement_ages: dict[int, int | None] = {}
     claim_ages: dict[int, int | None] = {}
-    for m in members:
+    for m in adults:
         o = overrides.get(str(m.id)) or {}
         ret = o.get("retirement_age", m.retirement_age)
         if m.role == "self" and "retirement_age" not in o and params.get("retirement_age"):
@@ -145,12 +149,13 @@ def build_plan_inputs(
         claim_ages[m.id] = o.get("ss_claim_age", m.ss_claim_age)
 
     age0 = {m.id: (start_year - m.birth_year) * 12 for m in members}
+    # Horizon: latest life expectancy among ADULT members only.
     life_end = {m.id: (m.life_expectancy + 1) * 12 - age0[m.id] for m in members}
-    horizon_months = max(life_end.values())
+    horizon_months = max(life_end[m.id] for m in adults)
 
     ret_month_raw = {
         m.id: retirement_ages[m.id] * 12 - age0[m.id]
-        for m in members if retirement_ages[m.id] is not None
+        for m in adults if retirement_ages[m.id] is not None
     }
     ret_month = {
         mid: max(0, min(raw, horizon_months)) for mid, raw in ret_month_raw.items()
@@ -303,10 +308,11 @@ def build_plan_inputs(
     # --- member specs --------------------------------------------------------
     member_specs = []
     for m in members:
-        claim = claim_ages[m.id]
+        is_adult = m.role in ADULT_ROLES
+        claim = claim_ages.get(m.id)
         ss_monthly = 0.0
         ss_start_month = None
-        if m.ss_monthly_at_fra and claim is not None:
+        if is_adult and m.ss_monthly_at_fra and claim is not None:
             claim = min(max(int(claim), 62), 70)
             ss_monthly = m.ss_monthly_at_fra * SS_CLAIM_FACTORS[claim]
             ss_start_month = claim * 12 - age0[m.id]
@@ -314,13 +320,16 @@ def build_plan_inputs(
             id=m.id,
             name=m.name,
             age0_months=age0[m.id],
-            life_end_month=life_end[m.id],
+            # a child's life end must never leak past the adult horizon
+            life_end_month=min(life_end[m.id], horizon_months),
             retirement_month=ret_month_raw.get(m.id),
             ss_monthly=ss_monthly,
             ss_start_month=ss_start_month,
             ss_claim_age=claim,
             tax_deferred0=tax_deferred0[m.id],
-            rmd_start_month=rmd_start_age(m.birth_year) * 12 - age0[m.id],
+            rmd_start_month=(
+                rmd_start_age(m.birth_year) * 12 - age0[m.id] if is_adult else None
+            ),
         ))
 
     spending = params.get("annual_retirement_spending")

@@ -105,3 +105,18 @@ and the engine changes in docs/ARCHITECTURE.md §Simulation engine item 4:
   role in {self, partner, other}, or a nullable child life_expectancy. Also:
   error codes chosen where the contract is silent — 409 self_member_exists /
   self_role_immutable, 403 self_member_undeletable, 404 member_not_found.
+- 2026-07-11 (backend-dev): coordinator rulings (docs/API.md 18277a4) applied.
+  (1) Horizon is now the latest life expectancy among ADULT members
+  (self/partner/other); child members never extend it and carry no
+  retirement/SS/RMD schedules even if those fields are set (assembly ignores
+  them; a child's life_end is clamped to the adult horizon so it cannot leak
+  into any schedule). Pinned by test_child_never_extends_horizon and
+  test_child_role_creates_no_schedules_or_milestones; seeded household horizon
+  shrank 81y → 52y (self ages 46–97, capped by Dana le 94); migration
+  sim-identity and golden tests unaffected (adult-only fixtures).
+  (2) PUT /spending verified to match the id convention; tightened one
+  unspecified edge: a category id that does not exist now 404s
+  (category_not_found) instead of silently creating with a fresh id.
+  (3) Dashboard monthly_surplus now subtracts spending categories alongside
+  expense flows (test in test_crud.test_dashboard_aggregate). 162 server
+  tests green, ruff clean, seeded 1000-path sim 0.31s.

@@ -162,6 +162,17 @@ def test_dashboard_aggregate(authed):
     assert body["monthly_surplus"] == 4000.0
     assert body["history"][-1]["net_worth"] == 150_000.0
 
+    # spending categories count as outflows in monthly_surplus (ruling
+    # 2026-07-11), alongside expense flows
+    authed.put(
+        "/api/v1/spending",
+        json={"categories": [
+            {"name": "Groceries", "monthly_amount": 900.0, "kind": "essential"},
+            {"name": "Fun", "monthly_amount": 350.0, "kind": "discretionary"},
+        ], "monthly_savings_target": 0},
+    )
+    assert authed.get("/api/v1/dashboard").json()["monthly_surplus"] == 2750.0
+
 
 def test_transactions_filters(authed):
     acc = authed.post("/api/v1/accounts", json={"name": "Chk", "type": "checking"}).json()
