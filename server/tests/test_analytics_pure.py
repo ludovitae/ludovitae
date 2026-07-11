@@ -193,6 +193,24 @@ def test_amount_variability_zero_for_flat_charges():
     assert charge.amount_variability_pct == 0.0
 
 
+def test_detect_recurring_skips_non_finite_amounts():
+    """SECURITY-REVIEW-v1.2 V2: non-finite money must never reach
+    statistics.median/pstdev (they raise AttributeError -> 500). The import
+    gate blocks NaN/inf upstream; this proves the pure layer self-defends too.
+    """
+    import math
+
+    for bad in (math.nan, math.inf, -math.inf):
+        occs = _monthly("Poison", [bad, bad, bad])
+        # Must not raise; the poisoned group is simply dropped (no charge).
+        assert detect_recurring(occs, D(2026, 7, 1)) == []
+    # A finite charge still surfaces even when a non-finite occurrence is mixed in.
+    good = _monthly("Clean", [9.99, 9.99, 9.99])
+    poisoned = _monthly("Poison", [math.nan, math.inf, 9.99])
+    keys = {c.key for c in detect_recurring(good + poisoned, D(2026, 7, 1))}
+    assert "clean" in keys and "poison" not in keys
+
+
 # --- heuristic categorizer -----------------------------------------------------
 
 
