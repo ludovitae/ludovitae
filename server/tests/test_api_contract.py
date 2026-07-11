@@ -349,9 +349,13 @@ def test_contract_walk_every_endpoint(authed):
     )
     assert preview.status_code == 200
     pv = preview.json()
-    # v1.2.2 (T-009): matched_preset + sign_hint join the CSV preview
+    # v1.2.2 (T-009): matched_preset + sign_hint join the CSV preview;
+    # #26 adds account_groups (multi-account) + pending_rows (status column)
     assert set(pv) == {"columns", "sample_rows", "suggested_mapping",
-                       "matched_preset", "sign_hint"}
+                       "matched_preset", "sign_hint", "account_groups",
+                       "pending_rows"}
+    assert pv["account_groups"] is None  # no account-identity column
+    assert pv["pending_rows"] is None  # no status column mapped
     assert isinstance(pv["columns"], list) and isinstance(pv["sample_rows"], list)
     assert pv["matched_preset"] is None  # nothing saved yet
     assert pv["sign_hint"] is None  # asset account: heuristic silent
@@ -367,7 +371,11 @@ def test_contract_walk_every_endpoint(authed):
               "save_preset": "Contract Bank"},
     )
     assert commit.status_code == 200
-    _assert_shape(commit.json(), {"imported": int, "skipped_duplicates": int}, "import/commit")
+    _assert_shape(
+        commit.json(),
+        {"imported": int, "skipped_duplicates": int, "skipped_pending": int},
+        "import/commit",
+    )
 
     # import presets (v1.2.2, T-009): saved by the commit above
     presets = authed.get("/api/v1/import/presets")
@@ -375,7 +383,8 @@ def test_contract_walk_every_endpoint(authed):
     _assert_shape(
         presets.json()[0],
         {"id": int, "name": str, "header_fingerprint": str, "mapping": dict,
-         "flip_signs": bool, "created_at": str},
+         "flip_signs": bool, "created_at": str,
+         "last_account_id": (int, type(None))},
         "GET /import/presets[0]",
     )
     assert authed.delete(
@@ -598,7 +607,9 @@ def test_ofx_preview_shape(authed):
     if resp.status_code != 200:
         pytest.skip(f"OFX sample not accepted by parser: {resp.json()}")
     body = resp.json()
-    assert set(body) == {"accounts_found", "transaction_count", "balance"}
+    assert set(body) == {"accounts_found", "transaction_count", "balance",
+                         "account_match"}
+    assert set(body["account_match"]) == {"account_id", "acctid_masked"}
     assert isinstance(body["accounts_found"], list)
     assert isinstance(body["transaction_count"], int)
 

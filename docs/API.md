@@ -372,6 +372,18 @@ set). Suggested when an account-ish header's values repeat across rows with
 distinct count > 1. When `account_id_column` is present the commit routes
 rows **per account** (multi-account mode).
 
+CSV `mapping` also gains optional `status_column` (#26 Citi ruling): rows
+whose status cell is `Pending` (case-insensitive) are skipped entirely —
+pending amounts mutate when they post and would break dedupe; any other
+status imports normally. Preview gains `pending_rows: int | null` (null
+when no status column is mapped); commit responses gain
+`skipped_pending: int` (0 when unmapped, OFX included). A column named
+exactly `Status` is auto-suggested. **Split debit/credit sign ruling**:
+each side parses as an absolute value and direction comes from the column
+role (debit → outflow/negative, credit → inflow/positive) — some exports
+(Citi) list credits already negative, and reading the cell's sign would
+double-count payments as spending.
+
 `POST /import/commit` accepts **either** `account_id` **or** `new_account`
 (multipart JSON: `{name, type, institution?, asset_class?, member_id?}`) —
 exactly one, else 422. `new_account` creates the account (type-appropriate
@@ -398,8 +410,30 @@ CSV parsing hardening (#26): leading non-CSV/blank preamble lines before the
 header are skipped (header = first row with ≥ 2 non-empty cells); the
 trailing date-less block tolerance handles footers of any length (dated rows
 with bad amounts still fail closed); quoted empty strings and quoted
-negative amounts parse; a column named exactly `Action` is preferred for
-`payee` (falls back to `Description`).
+negative amounts parse; **multiline quoted fields** (embedded newlines, e.g.
+Amex `Extended Details`) parse as single records — nothing may split the
+stream on physical lines; a column named exactly `Action` is preferred for
+`payee` (falls back to `Description`). Payees are whitespace-normalized on
+import (consecutive runs collapse to one space — fixed-width padded exports
+would fragment merchant analytics and dedupe).
+
+**Ruling change (#26, supersedes T-007):** CSV-file-supplied categories
+import as `category_source: "heuristic"` (was `"manual"`) — merchant-derived
+categories (e.g. Amex's) stay overridable by user rules, which now beat the
+file column at import time too. Bulk categorize remains the only `"manual"`
+source. No backfill; affects new imports only.
+
+Built-in presets shipped by migration 0007 (fingerprint-upserted, user
+deletable): **"Fidelity — Accounts History"** (multi-account mapping,
+`payee: Action`), **"American Express — Activity"** (`flip_signs: true`,
+`payee: Description`, `category: Category`, `account_id_column: Account #`)
+**"Citi — Credit Card"** (split debit/credit, `status_column: Status`,
+`payee: Description`) and **"Commerce Bank — Checking"** (classic
+all-positive split debit/credit, `payee: Description`).
+
+Further #26 parsing rulings: dates accept non-zero-padded `M/D/YYYY`;
+fully-quoted exports (header included) parse; `suggested_mapping` never
+proposes a fully-empty column for any role.
 
 **Investment semantics (coordinator ruling):** transactions imported into
 investment-type accounts (`brokerage|retirement|hsa`) are auto-categorized

@@ -11,7 +11,7 @@ import datetime as dt
 import re
 from dataclasses import dataclass, field
 
-from gol.importers.base import ParsedTransaction, amount_ok
+from gol.importers.base import ParsedTransaction, amount_ok, normalize_payee
 
 
 class OfxError(ValueError):
@@ -88,7 +88,7 @@ def parse(data: bytes) -> OfxStatement:
         amount = _parse_amount(_leaf(block, "TRNAMT"))
         if date is None or amount is None:
             continue  # tolerate malformed entries
-        payee = _leaf(block, "NAME") or _leaf(block, "MEMO") or ""
+        payee = normalize_payee(_leaf(block, "NAME") or _leaf(block, "MEMO") or "")
         stmt.transactions.append(ParsedTransaction(date=date, amount=amount, payee=payee))
 
     ledger = _LEDGER_BLOCK.search(text)

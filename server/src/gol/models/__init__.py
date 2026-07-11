@@ -49,6 +49,10 @@ SPENDING_KINDS = ("essential", "discretionary")
 # property/vehicle/loan-ish types default to off (docs/API.md freshness).
 TRACK_FRESHNESS_TYPES = ("checking", "savings", "credit_card", "brokerage", "retirement", "hsa")
 CATEGORY_SOURCES = ("manual", "rule", "heuristic", "ai", "none")
+# v1.2.2 (#26, coordinator ruling): transactions imported into investment-type
+# accounts get this category and are excluded from all spending analytics —
+# a dividend reinvestment is not spending (same family as transfer pairs).
+INVESTMENT_ACTIVITY_CATEGORY = "investment-activity"
 RULE_MATCHES = ("contains", "exact")
 RULE_FIELDS = ("payee",)
 
@@ -128,6 +132,12 @@ class Account(Base):
     last_import_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     staleness_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     track_freshness: Mapped[bool] = mapped_column(Boolean, default=False)
+    # v1.2.2 (#26): hashed external-account link — sha256 of the provider's
+    # raw account id (OFX ACCTID / CSV account-number cell), never the raw id.
+    # Upserted on import commit, last-write-wins; not exposed on the API.
+    external_account_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
 
     balances: Mapped[list[BalanceSnapshot]] = relationship(
         back_populates="account", cascade="all, delete-orphan", order_by="BalanceSnapshot.date"
@@ -284,6 +294,10 @@ class ImportPreset(Base):
     mapping: Mapped[dict] = mapped_column(JSON)
     flip_signs: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    # v1.2.2 (#26): the wizard's picker default — last single-target account
+    # this preset committed into. Loose reference (no FK: SQLite add_column
+    # cannot carry one); serialization null-checks existence instead.
+    last_account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Scenario(Base):

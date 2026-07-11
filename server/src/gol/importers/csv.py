@@ -3,6 +3,11 @@
 v1.2.2 (T-009): header fingerprints for institution presets, split
 debit/credit column support, sign-convention detection, and tolerance for
 trailing summary rows (bank "Total"/"Ending balance" footers).
+
+v1.2.2 (#26): preamble tolerance (leading blank/non-CSV lines before the
+header are skipped), multi-account exports (optional account_column /
+account_id_column in the mapping; rows carry their own account identity),
+and an exact "Action" column preferred as payee (Fidelity-style exports).
 """
 
 from __future__ import annotations
@@ -13,7 +18,7 @@ import hashlib
 import io
 import re
 
-from gol.importers.base import ParsedTransaction, amount_ok
+from gol.importers.base import ParsedTransaction, amount_ok, normalize_payee
 
 SAMPLE_ROWS = 5
 
@@ -51,7 +56,18 @@ def _rows(text: str) -> list[list[str]]:
         dialect = csvlib.Sniffer().sniff(sample, delimiters=",;\t|")
     except csvlib.Error:
         dialect = csvlib.excel
-    return [row for row in csvlib.reader(io.StringIO(text), dialect) if any(c.strip() for c in row)]
+    rows = [
+        row for row in csvlib.reader(io.StringIO(text), dialect) if any(c.strip() for c in row)
+    ]
+    # Preamble tolerance (#26): real exports open with title/disclaimer lines
+    # before the header. The header is the first row with >= 2 non-empty
+    # cells; anything above it is dropped so fingerprints and mappings see
+    # the true columns. (Blank lines are already gone via the filter above.)
+    start = next(
+        (i for i, row in enumerate(rows) if sum(1 for c in row if c.strip()) >= 2),
+        0,
+    )
+    return rows[start:]
 
 
 def header_fingerprint(columns: list[str]) -> str:
@@ -65,15 +81,69 @@ def _matches(low: str, hints: tuple[str, ...]) -> bool:
     return any(hint in low for hint in hints)
 
 
-def suggest_mapping(columns: list[str]) -> dict[str, str]:
-    mapping: dict[str, str] = {}
+# Multi-account exports (#26): identity column (hash source) and display-name
+# column. Substring hints for the id; the name column must be exactly
+# "account" or contain "account name" (never "account type" etc.).
+_ACCOUNT_ID_HINTS = ("account number", "account no", "account #", "acct number", "account id")
+
+
+def _suggest_account_columns(
+    columns: list[str], data_rows: list[list[str]]
+) -> dict[str, str]:
+    """Suggest account_column/account_id_column when an account-ish header's
+    values repeat across rows with more than one distinct value (#26)."""
     lowered = {col.strip().lower(): col for col in columns}
+    id_col = next((orig for low, orig in lowered.items() if _matches(low, _ACCOUNT_ID_HINTS)), None)
+    if id_col is None or not data_rows:
+        return {}
+    idx = columns.index(id_col)
+    values = {row[idx].strip() for row in data_rows if idx < len(row) and row[idx].strip()}
+    # repeat across rows + cardinality > 1: a per-row-unique column (txn ids)
+    # or a constant column is not a multi-account marker
+    if not (1 < len(values) < len(data_rows)):
+        return {}
+    out = {"account_id_column": id_col}
+    name_col = next(
+        (orig for low, orig in lowered.items() if low == "account" or "account name" in low),
+        None,
+    )
+    if name_col is not None:
+        out["account_column"] = name_col
+    return out
+
+
+def suggest_mapping(columns: list[str], data_rows: list[list[str]] | None = None) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    # #26 (Commerce ruling): never propose a fully-empty column for any role —
+    # exports carry placeholder columns ("No.") with no values at all.
+    usable = set(range(len(columns)))
+    if data_rows:
+        usable = {
+            i for i in usable
+            if any(i < len(row) and row[i].strip() for row in data_rows)
+        }
+    lowered = {
+        col.strip().lower(): col
+        for i, col in enumerate(columns)
+        if i in usable
+    }
+    # Fidelity-style exports (#26): a column named exactly "Action" carries
+    # the human-readable activity and is preferred as payee over Description.
+    if "action" in lowered:
+        mapping["payee"] = lowered["action"]
+    # Citi-style exports (#26): a column named exactly "Status" marks pending
+    # rows, which import skips (skipped_pending).
+    if "status" in lowered:
+        mapping["status_column"] = lowered["status"]
     for field, hints in _MAPPING_HINTS.items():
+        if field in mapping:
+            continue
         for hint in hints:
             match = next((orig for low, orig in lowered.items() if hint in low), None)
             if match is not None:
                 mapping[field] = match
                 break
+    mapping.update(_suggest_account_columns(columns, data_rows or []))
     if "amount" not in mapping:
         # split debit/credit columns — a column matching both sides (e.g.
         # "Debit/Credit") is a single signed column, not a split
@@ -105,7 +175,7 @@ def preview(data: bytes) -> dict:
     return {
         "columns": columns,
         "sample_rows": sample,
-        "suggested_mapping": suggest_mapping(columns),
+        "suggested_mapping": suggest_mapping(columns, rows[1:]),
     }
 
 
@@ -140,6 +210,8 @@ def _validate_mapping(mapping: dict[str, str]) -> bool:
     split = bool(mapping.get("debit")) and bool(mapping.get("credit"))
     if not split and "amount" not in mapping:
         raise CsvError("mapping must include 'amount' (or both 'debit' and 'credit')")
+    if mapping.get("account_column") and not mapping.get("account_id_column"):
+        raise CsvError("account_column requires account_id_column (the routing identity)")
     return split
 
 
@@ -151,15 +223,18 @@ def _column_index(columns: list[str], mapping: dict[str, str]) -> dict[str, int]
 
 
 def _row_amount(cell: str, split: bool, debit_cell: str, credit_cell: str) -> float:
-    """Amount for one row. Split mode: debit = outflow (negative), credit =
-    inflow (positive); exactly one side is normally filled."""
+    """Amount for one row. Split mode (#26 ruling): each side parses as an
+    ABSOLUTE value and direction comes from the column's role — debit =
+    outflow (negative), credit = inflow (positive). Some exports (Citi) list
+    credits already negative; reading the sign from the cell would make
+    payments double-count as spending."""
     if not split:
         return parse_amount(cell)
     debit = parse_amount(debit_cell) if debit_cell.strip() else 0.0
     credit = parse_amount(credit_cell) if credit_cell.strip() else 0.0
     if not debit_cell.strip() and not credit_cell.strip():
         raise CsvError("row has neither a debit nor a credit amount")
-    return credit - abs(debit)
+    return abs(credit) - abs(debit)
 
 
 def parse_transactions(
@@ -178,6 +253,11 @@ def parse_transactions(
             i = idx.get(field)
             return row[i] if i is not None and i < len(row) else ""
 
+        # Pending rows (#26 Citi ruling): skipped entirely — their amounts
+        # mutate when they post and would break dedupe. Counted separately
+        # via pending_rows() for the skipped_pending report.
+        if _is_pending(cell("status_column")):
+            continue
         try:
             date = parse_date(cell("date"))
         except CsvError as exc:
@@ -192,8 +272,10 @@ def parse_transactions(
             ParsedTransaction(
                 date=date,
                 amount=-amount if flip_signs else amount,
-                payee=cell("payee").strip(),
+                payee=normalize_payee(cell("payee")),
                 category=cell("category").strip() or None,
+                account_number=cell("account_id_column").strip() or None,
+                account_name=cell("account_column").strip() or None,
             )
         )
 
@@ -206,6 +288,26 @@ def parse_transactions(
         if isinstance(item, CsvError):
             raise item
     return [p for p in parsed[: last_ok + 1] if isinstance(p, ParsedTransaction)]
+
+
+def _is_pending(status_cell: str) -> bool:
+    return status_cell.strip().lower() == "pending"
+
+
+def pending_rows(data: bytes, mapping: dict[str, str]) -> int:
+    """How many rows the mapped status_column marks Pending (#26) — lenient:
+    0 when the mapping/file has no usable status column."""
+    col = mapping.get("status_column")
+    if not col:
+        return 0
+    rows = _rows(_decode(data))
+    if not rows:
+        return 0
+    columns = [c.strip() for c in rows[0]]
+    if col not in columns:
+        return 0
+    i = columns.index(col)
+    return sum(1 for row in rows[1:] if i < len(row) and _is_pending(row[i]))
 
 
 def lenient_amounts(data: bytes, mapping: dict[str, str]) -> list[float]:
@@ -228,6 +330,8 @@ def lenient_amounts(data: bytes, mapping: dict[str, str]) -> list[float]:
             i = idx.get(field)
             return row[i] if i is not None and i < len(row) else ""
 
+        if _is_pending(cell("status_column")):
+            continue
         try:
             out.append(_row_amount(cell("amount"), split, cell("debit"), cell("credit")))
         except CsvError:

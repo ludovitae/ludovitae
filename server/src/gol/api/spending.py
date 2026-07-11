@@ -14,7 +14,12 @@ from gol.api.common import Db
 from gol.assembly import get_or_create_profile
 from gol.auth.deps import Authenticated
 from gol.errors import ApiError
-from gol.models import SPENDING_KINDS, SpendingCategory, Transaction
+from gol.models import (
+    INVESTMENT_ACTIVITY_CATEGORY,
+    SPENDING_KINDS,
+    SpendingCategory,
+    Transaction,
+)
 
 router = APIRouter(tags=["spending"])
 
@@ -134,7 +139,7 @@ def observed_spending(
     counts: dict[str, int] = {}
     for category, amount in rows:
         key = (category or "").strip().lower() or "uncategorized"
-        if key == TRANSFER_CATEGORY:
+        if key in (TRANSFER_CATEGORY, INVESTMENT_ACTIVITY_CATEGORY):
             continue
         totals[key] = totals.get(key, 0.0) - amount  # outflows -> positive
         counts[key] = counts.get(key, 0) + 1

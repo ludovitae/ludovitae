@@ -1,0 +1,21 @@
+﻿
+
+Run Date,Account,Account Number,Action,Symbol,Description,Type,Exchange Quantity,Exchange Currency,Currency,Price,Quantity,Exchange Rate,Commission,Fees,Accrued Interest,Amount,Settlement Date
+06/30/2026,Roth IRA - Alex,Z11112222,REINVESTMENT DEMO GOVERNMENT MONEY MARKET (DEMOX) (Cash),DEMOX,DEMO GOVERNMENT MONEY MARKET,Cash,0,"",USD,1,0.51,0,"","","","-0.51",""
+06/30/2026,Roth IRA - Alex,Z11112222,DIVIDEND RECEIVED DEMO GOVERNMENT MONEY MARKET (DEMOX) (Cash),DEMOX,DEMO GOVERNMENT MONEY MARKET,Cash,0,"",USD,"",0,0,"","","","0.51",""
+06/27/2026,Brokerage - Alex,Z33334444,YOU BOUGHT DEMO TOTAL MARKET INDEX (DTMIX) (Cash),DTMIX,DEMO TOTAL MARKET INDEX,Cash,0,"",USD,112.40,4.448,0,"","","","-500.00",""
+06/25/2026,Brokerage - Alex,Z33334444,DIVIDEND RECEIVED DEMO TOTAL MARKET INDEX (DTMIX) (Cash),DTMIX,DEMO TOTAL MARKET INDEX,Cash,0,"",USD,"",0,0,"","","","12.34",""
+06/24/2026,HSA - Sam,Z55556666,CONTRIBUTION EMPLOYER (Cash),"",NO DESCRIPTION,Cash,0,"",USD,"",0,0,"","","","250.00",""
+06/20/2026,HSA - Sam,Z55556666,REINVESTMENT DEMO GOVERNMENT MONEY MARKET (DEMOX) (Cash),DEMOX,DEMO GOVERNMENT MONEY MARKET,Cash,0,"",USD,1,0.08,0,"","","","-0.08",""
+06/18/2026,Roth IRA - Alex,Z11112222,YOU BOUGHT DEMO GROWTH FUND (DGFX) (Cash),DGFX,DEMO GROWTH FUND,Cash,0,"",USD,55.10,9.074,0,"","","","-500.00",""
+
+"Fake disclaimer line one: for demonstration purposes only, this text spans"
+"a few lines like a real brokerage footer would, including a Fake Corp"
+"(FAKE) mention and a registered trademark note."
+
+"Demo Services LLC. Member NOTHING. A 9% note on nothing in particular is"
+"included to mirror the shape of the real thing."
+
+"1234567.8.9"
+
+Date downloaded 07/01/2026 09:15 am
