@@ -107,3 +107,50 @@ v1.2 UI per docs/API.md v1.2 sections, DESIGN.md polish bar, mock-first:
   - Residual risk: same as T-006 — no real browser on this host; charts
     verified by unit tests, jsdom walks and a dev-server boot. Suggest a
     visual QA pass of the heatmap + forecast stack in both themes/modes.
+- 2026-07-11 (frontend-dev): **reconciliation pass** per coordinator (merged
+  main incl. T-007 219-test backend, T-011a engine v2, T-012; resolved the
+  BOARD conflict keeping main's rows). Commit 9556804; build/lint clean,
+  **136 tests (was 128)**; dev boot verified. All 8 shape rulings adopted —
+  backend wins:
+  1. Forecast: `variable_by_category = [{category, monthly_avg}]` (client
+     derives constant series); annual charges lump in their anniversary month
+     (mock reproduces the lump; unit test asserts exactly one +$139 month).
+     Stat line shows the recurring monthly AVERAGE and says where annual
+     lumps land.
+  2. Hotspots: N FULL months vs the N before (current partial excluded);
+     spikes increases-only ≥ +20% over a ≥ $20/mo baseline; copy updated.
+  3. Top merchants: top 10, store-number-normalized grouping (mock
+     `normalizeMerchant`); test asserts no name ends in a digit.
+  4. `amount_variability_pct` added to the type + mock (pstdev/median, 1dp)
+     and USED: the radar renders "Subscriptions & bills" / "Spending habits"
+     / "Lapsed" sections with subtotals; stat tiles speak about subscriptions
+     only. **UI segmentation choice (logged):** subscription-like =
+     variability ≤ 5% OR a price step ≥ 5% AND ≥ 2× the variability — without
+     the 2× guard a price-hiked Netflix (variability ~6.6%) files under
+     habits, and a jittery habit whose last amount sits off-median sneaks
+     into subscriptions (both unit-tested). Habit rows never show price
+     badges (their "change" is jitter). Mock adds a weekly Green Basket
+     habit so segmentation demos.
+  5. Dismiss wired to `POST /transfers/candidates/dismiss` (persistent
+     tombstone; mock implements tombstones incl. unpair-tombstone and
+     pair-clears-tombstone); the session-local hack is gone; a smoke test
+     asserts a dismissed candidate stays gone across remounts.
+  6. Suggest is positional with `category: null` for unmatched (type + mock +
+     chip filter); bulk categorize typed `{updated}`; `api_key_last4` null
+     and `by_purpose` shape were already conformant; `possibly_forgotten`
+     keys on variability ≤ 5% (ruling) rather than exact-amount equality.
+  7. Price-change values pass through raw/rounded; badges gate at ≥ 5%
+     (matching the backend's own price_increases threshold).
+  8. `?uncategorized=1` paired-row exclusion confirmed (already conformant).
+  - **Engine v2 passthrough (T-011a):** `SimResult.engine_notes` +
+    `assumptions` (typed `SimAssumptions` incl. reserved `tax_model?`); mock
+    sim emits engine_version "2", the contract note, and its actual resolved
+    constants (market mu/sigma, resolved inflation incl. override, tax rate,
+    ss_taxable_share 0.85). No UI consumes them yet — the assumptions strip
+    is T-011b as instructed.
+  - **Attention economics audit (new DESIGN.md rule):** review nav badge now
+    caps at **9+** (smoke test asserts the cap) and clears itself at zero
+    (renders nothing). Freshness has exactly the two blessed surfaces —
+    inline row status where the object lives + the dashboard aging→stale
+    strip; no chrome badge, no per-item nags, the strip navigates rather
+    than suppresses. No other attention surfaces exist in the T-008 UI.
