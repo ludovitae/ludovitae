@@ -279,7 +279,7 @@ export function FanChart({
 
           {/* milestone markers: hairline + labeled chip, staggered rows */}
           {placedMarkers.map((p) => (
-            <g key={p.key} data-milestone={p.key}>
+            <g key={p.key} data-milestone={p.key} aria-label={p.label}>
               <title>{p.label}</title>
               <line
                 x1={p.x}
