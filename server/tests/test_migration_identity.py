@@ -3,9 +3,10 @@ like v1 did, when the household is just the migrated self member with the
 same parameters (no RMD-eligible balances, claim age == old SS start age).
 
 The golden JSON was recorded by running the same fixture data through the v1
-engine (see tests/v1_fixture.py). A second fixture variant turns the
-brokerage into a retirement account, where RMDs legitimately (and newly)
-fire — covered as new behavior, not identity.
+engine (see tests/v1_fixture.py), and re-recorded under engine v2 for the
+T-011 SS taxable cap — see the v1_fixture docstring for why that is sound.
+A second fixture variant turns the brokerage into a retirement account, where
+RMDs legitimately (and newly) fire — covered as new behavior, not identity.
 """
 
 from __future__ import annotations

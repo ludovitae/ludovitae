@@ -36,7 +36,8 @@ def test_simulate_response_shape(authed):
     resp = authed.post("/api/v1/simulate", json={"scenario_id": 0, "seed": 42, "n_paths": 500})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["engine_version"] == "1"
+    assert body["engine_version"] == "2"
+    assert body["engine_notes"] == ["Taxable Social Security capped at 85% (was 100%)"]
     assert body["n_paths"] == 500
     assert body["seed"] == 42
     assert set(body["percentiles"]) == {"p10", "p25", "p50", "p75", "p90"}
@@ -53,6 +54,60 @@ def test_simulate_response_shape(authed):
     assert labels["ss_start"] == "Brian claims Social Security (100% of FRA)"
     ages = [m["age"] for m in body["milestones"]]
     assert ages == sorted(ages)
+
+
+def test_simulate_assumptions_reflect_inputs_used(authed):
+    """T-011: the assumptions block reports what the run actually used —
+    profile knobs AND scenario param overrides — not re-read DB state."""
+    _setup_plan(authed)
+    authed.put(
+        "/api/v1/profile",
+        json={"annual_retirement_spending": 80_000, "inflation_pct": 2.5,
+              "effective_tax_rate_pct": 22.0},
+    )
+    baseline = authed.post(
+        "/api/v1/simulate", json={"scenario_id": 0, "seed": 7, "n_paths": 100}
+    ).json()
+    assert baseline["assumptions"] == {
+        "market": {"stocks_mean_pct": 7.0, "stocks_vol_pct": 15.0,
+                   "bonds_mean_pct": 3.5, "bonds_vol_pct": 7.0,
+                   "cash_mean_pct": 1.5, "cash_vol_pct": 0.5},
+        "inflation_pct": 2.5,
+        "effective_tax_rate_pct": 22.0,
+        "ss_taxable_share": 0.85,
+        "engine_version": "2",
+    }
+    # scenario overrides flow into the assumptions (means overridden, vols kept)
+    custom = authed.post(
+        "/api/v1/simulate",
+        json={"params": {"return_override_pct": 5.0, "inflation_override_pct": 3.1},
+              "seed": 7, "n_paths": 100},
+    ).json()
+    assert custom["assumptions"]["market"] == {
+        "stocks_mean_pct": 5.0, "stocks_vol_pct": 15.0,
+        "bonds_mean_pct": 5.0, "bonds_vol_pct": 7.0,
+        "cash_mean_pct": 5.0, "cash_vol_pct": 0.5,
+    }
+    assert custom["assumptions"]["inflation_pct"] == 3.1
+    assert custom["assumptions"]["effective_tax_rate_pct"] == 22.0
+
+
+def test_compare_results_carry_assumptions(authed):
+    _setup_plan(authed)
+    scn = authed.post(
+        "/api/v1/scenarios",
+        json={"name": "Cautious", "params": {"return_override_pct": 4.0}},
+    ).json()
+    results = authed.post(
+        "/api/v1/scenarios/compare",
+        json={"scenario_ids": [0, scn["id"]], "n_paths": 100, "seed": 7},
+    ).json()["results"]
+    assert results[0]["assumptions"]["market"]["stocks_mean_pct"] == 7.0
+    assert results[1]["assumptions"]["market"]["stocks_mean_pct"] == 4.0
+    for r in results:
+        assert r["engine_version"] == "2"
+        assert r["engine_notes"] == ["Taxable Social Security capped at 85% (was 100%)"]
+        assert r["assumptions"]["ss_taxable_share"] == 0.85
 
 
 def test_simulate_member_overrides_move_milestones(authed):
