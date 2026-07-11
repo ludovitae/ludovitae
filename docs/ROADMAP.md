@@ -6,19 +6,24 @@ updated in the same commit that opens a version's tasks.
 
 ## Shipped
 
-- **v1** — foundations: auth (LAN/password/TLS), accounts/flows/goals CRUD,
-  Monte Carlo engine + scenario studio + fan charts, CSV/OFX import, QA and
-  security hardening (docs/SECURITY-REVIEW-v1.md).
-- **v1.1** — household members (roles, per-member ownership), spending
+- **v1.0.0** — foundations: auth (LAN/password/TLS), accounts/flows/goals
+  CRUD, Monte Carlo engine + scenario studio + fan charts, CSV/OFX import,
+  QA and security hardening (docs/SECURITY-REVIEW-v1.md).
+- **v1.1.0** — household members (roles, per-member ownership), spending
   profile + observed spending, retirement timing (SS claim-age actuarial
   factors, RMDs per SECURE 2.0), engine-emitted milestones on the fan chart.
+- **v1.2.0** — real spending: credit-card transfer pairing with tombstones,
+  layered categorization (AI stubbed) + AI budget admin, import freshness,
+  spending hub (summary/radar/hotspots/forecast), review queues; engine v2
+  model-honesty (85% SS cap, assumptions block); standalone bracket tax
+  module. See docs/releases/v1.2.0.md.
 
 ## In flight
 
-- **v1.2** — real spending: credit-card transfer pairing, layered
-  categorization (AI stubbed), import freshness, spending analytics
-  (summary/recurring/hotspots/forecast), AI budget admin. T-007 (backend, in
-  review) / T-008 (frontend, building).
+- **T-010 (v1.2b durability)** and **T-011b (assumptions strip UI)** — next
+  to fire; **T-009 (v1.2a first real baseline)** awaits owner exports in
+  data/first-mile/. Rename to Ludovitae + GitHub org push awaits the owner's
+  org token.
 
 ## Next (sequencing under owner review after the 2026-07-11 PM nemesis review)
 
