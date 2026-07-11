@@ -14,7 +14,9 @@ import { ThemeProvider } from '@/theme/ThemeProvider'
 import { AppShell } from '@/layout/AppShell'
 import { LoginPage, SetupPage } from '@/features/auth/AuthScreens'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
+import { HouseholdPage } from '@/features/household/HouseholdPage'
 import { AccountsPage } from '@/features/accounts/AccountsPage'
+import { SpendingPage } from '@/features/spending/SpendingPage'
 import { ScenariosPage } from '@/features/scenarios/ScenariosPage'
 import { GoalsPage } from '@/features/goals/GoalsPage'
 import { ImportPage } from '@/features/import/ImportPage'
@@ -74,7 +76,9 @@ const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { path: '/', element: <DashboardPage /> },
+          { path: '/household', element: <HouseholdPage /> },
           { path: '/accounts', element: <AccountsPage /> },
+          { path: '/spending', element: <SpendingPage /> },
           { path: '/scenarios', element: <ScenariosPage /> },
           { path: '/goals', element: <GoalsPage /> },
           { path: '/import', element: <ImportPage /> },

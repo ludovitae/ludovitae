@@ -8,15 +8,21 @@ import {
   IconAccounts,
   IconDashboard,
   IconGoals,
+  IconHousehold,
   IconImport,
   IconLogout,
   IconScenarios,
   IconSettings,
+  IconSpending,
 } from '@/components/icons'
 
+// Order tells the plan's story: who's in it (Household), what they own
+// (Accounts), what life costs (Spending), then the what-ifs and dreams.
 const NAV = [
   { to: '/', label: 'Dashboard', icon: IconDashboard, end: true },
+  { to: '/household', label: 'Household', icon: IconHousehold },
   { to: '/accounts', label: 'Accounts', icon: IconAccounts },
+  { to: '/spending', label: 'Spending', icon: IconSpending },
   { to: '/scenarios', label: 'Scenarios', icon: IconScenarios },
   { to: '/goals', label: 'Goals', icon: IconGoals },
   { to: '/import', label: 'Import', icon: IconImport },

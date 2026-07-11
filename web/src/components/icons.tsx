@@ -70,6 +70,30 @@ export const IconSettings = (p: SVGProps<SVGSVGElement>) => (
   </I>
 )
 
+export const IconHousehold = (p: SVGProps<SVGSVGElement>) => (
+  <I {...p}>
+    <circle cx="7.2" cy="6.8" r="2.6" />
+    <path d="M2.8 16.5c.4-3.1 2.2-4.9 4.4-4.9s4 1.8 4.4 4.9" />
+    <circle cx="13.8" cy="7.6" r="2.1" opacity=".55" />
+    <path d="M13 12.6c2 .1 3.7 1.6 4.2 3.9" opacity=".55" />
+  </I>
+)
+
+export const IconSpending = (p: SVGProps<SVGSVGElement>) => (
+  <I {...p}>
+    <rect x="2.5" y="5.5" width="15" height="10.5" rx="2" />
+    <path d="M13.2 5.5V4.2A1.2 1.2 0 0 0 11.8 3L4 4.6" />
+    <path d="M17.5 9.5h-3.2a1.6 1.6 0 0 0 0 3.2h3.2" />
+  </I>
+)
+
+export const IconWarning = (p: SVGProps<SVGSVGElement>) => (
+  <I {...p}>
+    <path d="M10 3.2 17.6 16H2.4L10 3.2Z" />
+    <path d="M10 8.2v3.6M10 14.1v.1" />
+  </I>
+)
+
 export const IconPlus = (p: SVGProps<SVGSVGElement>) => (
   <I {...p}>
     <path d="M10 4.5v11M4.5 10h11" />
