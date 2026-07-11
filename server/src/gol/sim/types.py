@@ -114,7 +114,16 @@ class PlanInputs:
 
     annual_retirement_spending: float = 0.0
     inflation_mean_pct: float = 2.5
-    effective_tax_rate_pct: float = 18.0
+    # Flat-rate tax override. A number selects the v1 flat-rate engine path
+    # (preserved verbatim); None selects the bracket-aware model (T-012
+    # phase 2). The dataclass default stays 18.0 so directly-constructed
+    # inputs (tests, tooling) keep v1 semantics; assembly passes the
+    # profile's stored value, which is null for fresh profiles.
+    effective_tax_rate_pct: float | None = 18.0
+    # Household filing status for bracket mode: "single" | "mfj". Derived by
+    # assembly (coordinator ruling: mfj iff >= 2 members with role in
+    # {self, partner}); ignored in flat mode.
+    filing_status: str = "single"
 
     market: MarketParams = field(default_factory=MarketParams)
 

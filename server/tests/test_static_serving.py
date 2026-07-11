@@ -121,3 +121,41 @@ def test_no_spa_route_when_dist_absent(tmp_path, monkeypatch):
         # a non-API path 404s (no SPA fallback registered)
         assert c.get("/some/client/route").status_code == 404
     reset_engine()
+
+
+def test_serves_packaged_webdist_when_no_other_source(tmp_path, monkeypatch):
+    """#13: with GOL_WEB_DIST unset and repo web/dist absent, the app serves the
+    gol/_webdist bundle packaged into the wheel."""
+    packaged = tmp_path / "_webdist"
+    packaged.mkdir()
+    (packaged / "index.html").write_text(f"<!doctype html><title>GoL</title>{INDEX_MARKER}")
+
+    monkeypatch.setenv("GOL_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.delenv("GOL_WEB_DIST", raising=False)
+    # repo web/dist absent, packaged bundle present
+    monkeypatch.setattr("gol.main._DEFAULT_DIST", tmp_path / "no-such-web-dist")
+    monkeypatch.setattr("gol.main._PACKAGED_DIST", packaged)
+    reset_engine()
+    app = create_app()
+    with TestClient(app) as c:
+        resp = c.get("/")
+        assert resp.status_code == 200
+        assert INDEX_MARKER in resp.text
+        # /api/v1 still wins over the bundled SPA
+        assert c.get("/api/v1/auth/session").json()["setup_required"] is True
+    reset_engine()
+
+
+def test_api_only_when_no_dist_anywhere(tmp_path, monkeypatch):
+    """#13: env unset, no repo dist, no packaged bundle → API-only mode."""
+    monkeypatch.setenv("GOL_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.delenv("GOL_WEB_DIST", raising=False)
+    monkeypatch.setattr("gol.main._DEFAULT_DIST", tmp_path / "no-web-dist")
+    monkeypatch.setattr("gol.main._PACKAGED_DIST", tmp_path / "no-webdist")
+    reset_engine()
+    app = create_app()
+    with TestClient(app) as c:
+        assert c.get("/some/client/route").status_code == 404
+        # API still works
+        assert c.get("/api/v1/auth/session").status_code == 200
+    reset_engine()

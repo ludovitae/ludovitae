@@ -5,6 +5,11 @@ return the documented error envelope ({"error": {"code", "message"}}), never a
 
 from __future__ import annotations
 
+from sqlalchemy import select
+
+from gol.db import session_factory
+from gol.models import HouseholdMember
+
 
 def _envelope(resp, status: int, code: str | None = None):
     assert resp.status_code == status, resp.text
@@ -19,37 +24,39 @@ def _envelope(resp, status: int, code: str | None = None):
 # --- degenerate plan horizons (D-001) --------------------------------------
 
 
-def _self_id(authed) -> int:
-    return next(
-        m["id"] for m in authed.get("/api/v1/household").json() if m["role"] == "self"
-    )
+def _force_self(authed, **fields) -> None:
+    """Write degenerate person data straight to the DB, bypassing the write-time
+    guard (#7 invalid_person_data). The simulate-time guard is defense in depth:
+    it must still fire even if bad data reaches the DB by some other path, so
+    these tests seed it directly rather than through the (now-validating) API."""
+    authed.get("/api/v1/household")  # materialize the self member
+    db = session_factory()()
+    try:
+        member = db.execute(
+            select(HouseholdMember).where(HouseholdMember.role == "self")
+        ).scalar_one()
+        for key, value in fields.items():
+            setattr(member, key, value)
+        db.commit()
+    finally:
+        db.close()
 
 
 def test_life_expectancy_below_current_age_is_422_not_500(authed):
     """birth_year older than life_expectancy would crash the numpy engine."""
-    resp = authed.patch(
-        f"/api/v1/household/{_self_id(authed)}",
-        json={"birth_year": 1900, "life_expectancy": 92},  # start_age ~126 > 92
-    )
-    assert resp.status_code == 200
+    _force_self(authed, birth_year=1900, life_expectancy=92)  # start_age ~126 > 92
     resp = authed.post("/api/v1/simulate", json={"scenario_id": 0, "n_paths": 50})
     _envelope(resp, 422, "invalid_plan_horizon")
 
 
 def test_future_birth_year_is_422_not_negative_ages(authed):
-    resp = authed.patch(
-        f"/api/v1/household/{_self_id(authed)}", json={"birth_year": 2050}
-    )
-    assert resp.status_code == 200
+    _force_self(authed, birth_year=2050)
     resp = authed.post("/api/v1/simulate", json={"scenario_id": 0, "n_paths": 50})
     _envelope(resp, 422, "invalid_plan_horizon")
 
 
 def test_degenerate_horizon_also_guarded_in_compare(authed):
-    authed.patch(
-        f"/api/v1/household/{_self_id(authed)}",
-        json={"birth_year": 1900, "life_expectancy": 92},
-    )
+    _force_self(authed, birth_year=1900, life_expectancy=92)
     resp = authed.post(
         "/api/v1/scenarios/compare", json={"scenario_ids": [0], "n_paths": 50}
     )

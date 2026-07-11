@@ -91,7 +91,7 @@ def test_pre_migration_backup_created_by_run_migrations(v1_db):
         assert "birth_year" in profile_cols
     # while the live DB moved to head
     with sqlite3.connect(config.db_path()) as conn:
-        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == ("0004",)
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == ("0005",)
 
 
 def test_pre_migration_backup_skips_fresh_and_at_head_dbs(data_dir):
@@ -197,7 +197,7 @@ def test_export_contains_every_table_with_matching_row_counts(authed):
         doc = resp.json()
 
         assert doc["format"] == "gol-export"
-        assert doc["schema_version"] == "0004"
+        assert doc["schema_version"] == "0005"
         assert doc["exported_at"].endswith("Z")
 
         assert set(doc["tables"]) == set(Base.metadata.tables)
@@ -247,3 +247,27 @@ def test_export_never_contains_the_ai_api_key(authed):
         assert db.execute(select(AiSettings)).scalar_one().api_key == secret
     finally:
         db.close()
+
+
+def test_export_redacts_all_credential_material(authed):
+    """SECURITY-REVIEW-v1.2 V1: the export must not carry credential material
+    (password hash, live session/CSRF tokens) — only null in the redacted
+    columns, while the table/column shape stays intact. Restore is file-level,
+    so these values serve no export purpose and only widen the blast radius of
+    a leaked export file."""
+    resp = authed.get("/api/v1/export")
+    assert resp.status_code == 200
+    tables = resp.json()["tables"]
+
+    (cred,) = tables["auth_credential"]
+    assert "password_hash" in cred and cred["password_hash"] is None
+    # the created_at metadata column is untouched (only secrets are nulled)
+    assert cred["created_at"] is not None
+
+    assert tables["auth_sessions"], "expected a live session row in the export"
+    for sess in tables["auth_sessions"]:
+        assert "token_hash" in sess and sess["token_hash"] is None
+        assert "csrf_token" in sess and sess["csrf_token"] is None
+
+    # No argon2 hash or session-token hex should appear anywhere in the body.
+    assert "$argon2id$" not in resp.text
