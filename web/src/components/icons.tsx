@@ -174,6 +174,22 @@ export const IconSparkle = (p: SVGProps<SVGSVGElement>) => (
   </I>
 )
 
+/** Review queue: an inbox tray. */
+export const IconReview = (p: SVGProps<SVGSVGElement>) => (
+  <I {...p}>
+    <path d="M4.8 4.5h10.4L17.2 11v3.2a1.8 1.8 0 0 1-1.8 1.8H4.6a1.8 1.8 0 0 1-1.8-1.8V11l2-6.5Z" />
+    <path d="M2.8 11h4.1l1.1 2.1h4l1.1-2.1h4.1" />
+  </I>
+)
+
+/** Transfer pairing: two opposing arrows. */
+export const IconSwap = (p: SVGProps<SVGSVGElement>) => (
+  <I {...p}>
+    <path d="M4 7.2h11.5M13 4.5l2.7 2.7L13 9.9" />
+    <path d="M16 12.8H4.5M7 10.1l-2.7 2.7L7 15.5" />
+  </I>
+)
+
 /** Account-type glyphs for the accounts table. */
 // eslint-disable-next-line react-refresh/only-export-components
 export const TYPE_ICONS: Record<string, (p: SVGProps<SVGSVGElement>) => ReturnType<typeof I>> = {
