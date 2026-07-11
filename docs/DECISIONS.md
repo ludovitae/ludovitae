@@ -1,5 +1,17 @@
 # Decision log (ADRs, newest first)
 
+## 2026-07-11 — Transactions-first data philosophy (owner)
+
+The ongoing data feed is frequent CSV/OFX transaction dumps plus occasional
+balance snapshots — NOT hand-maintained flows. Consequences:
+1. Flow-CRUD UI stays on hold; flows are slow-moving assumptions (set rarely),
+   while transactions carry reality (salary changes, bonuses, RSU vests, ESPP).
+2. Future direction (v1.3): income inference from transaction inflows —
+   the mirror of v1.2's spending detectors — surfacing observed vs assumed
+   income and flagging drift. Settings may carry informational "hints"
+   (e.g. base salary) as calibration anchors, never as sim inputs.
+3. Import UX priority rises: freshness warnings (v1.2) are load-bearing.
+
 ## 2026-07-11 — v1.2: real spending, credit cards, freshness, AI budget
 
 1. **Credit cards without double-entry pain** (owner-approved): spending

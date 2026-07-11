@@ -16,7 +16,17 @@
 - F-002: `formatMoneyCompact` renders ~$999.5k–$999.9k as `$1000K` (cosmetic).
 - Consider validating birth_year/life_expectancy consistency at `PUT /profile`
   time, not just at simulate time (QA suggestion).
-- Flow CRUD forms (v1.1 shipped only an owner picker per row; T-006 log).
+- Flow CRUD forms — ON HOLD by owner decision (2026-07-11): the workflow is
+  transactions-first (frequent CSV dumps + occasional balance snapshots), so
+  income/spending reality should come from imports, not hand-edited flows.
+  Revisit only if a real gap appears after v1.3 income inference.
+- v1.3 candidate — **observed income / income inference**: detect recurring
+  and lumpy inflows (salary cadence, bonuses, RSU vests, ESPP) from imported
+  transactions, mirror of the v1.2 spending detectors; show observed vs
+  assumed income and flag drift against the baseline income flows; optional
+  settings "hint" fields (e.g. base salary $) as calibration anchors, not
+  simulation inputs. Owner's comp is complicated (base + bonus + RSU + ESPP)
+  — design for lumpy, multi-source income from the start.
 - Visual QA pass of milestone chips in both themes on a real browser (T-006
   residual risk; no browser on the build host).
 - Game theme: full illustration pass (v1 shipped a credible token skin).
