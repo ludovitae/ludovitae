@@ -1,7 +1,10 @@
 /** Success probability — large stat with a subtle radial treatment
- * (270° arc, rounded caps), animated sweep. Not a toy speedometer. */
+ * (270° arc, rounded caps), animated sweep. Not a toy speedometer.
+ * T-011 model honesty: the figure shows the nearest 5% ("about 75%") —
+ * three-digit precision would claim resolution the model doesn't have.
+ * The exact run value lives in the title/aria text. */
 
-import { formatProbability } from '@/lib/format'
+import { probabilityTitle, roundProbability5 } from '@/lib/format'
 import { useTweenedValue } from './useTween'
 
 export function ProbabilityGauge({
@@ -35,7 +38,12 @@ export function ProbabilityGauge({
   const fillEnd = startDeg + sweepDeg * p
 
   return (
-    <div className="flex flex-col items-center" role="img" aria-label={`${label}: ${formatProbability(probability)}`}>
+    <div
+      className="flex flex-col items-center"
+      role="img"
+      aria-label={`${label}: about ${roundProbability5(probability)}%`}
+      title={probabilityTitle(probability)}
+    >
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
           <path
@@ -57,7 +65,10 @@ export function ProbabilityGauge({
         </svg>
         <div className="absolute inset-0 grid place-items-center">
           <span className="num-display text-3xl font-semibold text-ink">
-            {formatProbability(p)}
+            <span aria-hidden className="text-xl font-medium text-ink-3">
+              ~
+            </span>
+            {roundProbability5(p)}%
           </span>
         </div>
       </div>

@@ -6,6 +6,9 @@ import {
   formatMoneyDelta,
   formatMonthYear,
   formatProbability,
+  formatProbabilityApprox,
+  probabilityTitle,
+  roundProbability5,
 } from './format'
 
 describe('formatMoney', () => {
@@ -95,6 +98,24 @@ describe('formatProbability', () => {
     expect(formatProbability(0.873)).toBe('87%')
     expect(formatProbability(1)).toBe('100%')
     expect(formatProbability(0)).toBe('0%')
+  })
+})
+
+describe('formatProbabilityApprox (T-011 model honesty)', () => {
+  it('rounds to the nearest 5%', () => {
+    expect(formatProbabilityApprox(0.737)).toBe('~75%')
+    expect(formatProbabilityApprox(0.872)).toBe('~85%')
+    expect(formatProbabilityApprox(0.88)).toBe('~90%')
+    expect(formatProbabilityApprox(1)).toBe('~100%')
+    expect(formatProbabilityApprox(0)).toBe('~0%')
+    expect(formatProbabilityApprox(NaN)).toBe('—')
+  })
+  it('clamps out-of-range input', () => {
+    expect(roundProbability5(1.2)).toBe(100)
+    expect(roundProbability5(-0.1)).toBe(0)
+  })
+  it('pairs the display with an exact-value title', () => {
+    expect(probabilityTitle(0.737)).toBe('About 75% — this run computed 74%')
   })
 })
 

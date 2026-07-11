@@ -25,7 +25,7 @@ import { Modal } from '@/components/Overlay'
 import { Skeleton } from '@/components/Skeleton'
 import { Slider } from '@/components/Slider'
 import { IconCheck, IconPin, IconPlus, IconX } from '@/components/icons'
-import { formatMoney, formatMoneyCompact, formatProbability } from '@/lib/format'
+import { formatMoney, formatMoneyCompact, formatProbabilityApprox, probabilityTitle } from '@/lib/format'
 import {
   cleanParams,
   effectiveMemberTiming,
@@ -486,8 +486,12 @@ function CompareView({
                       {r!.name}
                     </span>
                   </td>
-                  <td className="num px-4 py-2.5 text-right font-semibold text-ink">
-                    {formatProbability(r!.success_probability)}
+                  {/* T-011: nearest 5% — the model's honest resolution; exact in title */}
+                  <td
+                    className="num px-4 py-2.5 text-right font-semibold text-ink"
+                    title={probabilityTitle(r!.success_probability)}
+                  >
+                    {formatProbabilityApprox(r!.success_probability)}
                   </td>
                   <td className="num px-4 py-2.5 text-right text-ink">{formatMoneyCompact(r!.ending_net_worth.p50)}</td>
                   <td className="num px-4 py-2.5 text-right text-ink-2">{formatMoneyCompact(r!.ending_net_worth.p10)}</td>
