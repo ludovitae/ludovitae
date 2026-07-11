@@ -96,6 +96,19 @@ export function SetupPage() {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // #27: after the password lands, one interstitial choice — demo or empty.
+  const [phase, setPhase] = useState<'form' | 'choose'>('form')
+
+  if (phase === 'choose') {
+    return (
+      <FirstRunChoice
+        onDone={async () => {
+          await qc.invalidateQueries()
+          navigate('/', { replace: true })
+        }}
+      />
+    )
+  }
 
   if (session.data && !session.data.setup_required)
     return <Navigate to={session.data.authenticated ? '/' : '/login'} replace />
@@ -112,8 +125,7 @@ export function SetupPage() {
     try {
       await api.auth.setup(password)
       await api.auth.login(password)
-      await qc.invalidateQueries({ queryKey: qk.session })
-      navigate('/', { replace: true })
+      setPhase('choose')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not reach the server.')
     } finally {
@@ -170,6 +182,71 @@ export function SetupPage() {
           {busy ? 'Setting up…' : 'Create & unlock'}
         </Button>
       </form>
+    </AuthFrame>
+  )
+}
+
+/** #27 first-run interstitial: explore with demo data, or start empty. */
+function FirstRunChoice({ onDone }: { onDone: () => Promise<void> }) {
+  const [busy, setBusy] = useState<'demo' | 'empty' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function choose(mode: 'demo' | 'empty') {
+    setBusy(mode)
+    setError(null)
+    try {
+      // "Start empty" just proceeds — a fresh database is already empty.
+      if (mode === 'demo') await api.admin.reset('demo', 'reset ludovitae')
+      await onDone()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not reach the server.')
+      setBusy(null)
+    }
+  }
+
+  return (
+    <AuthFrame>
+      <div className="mb-4">
+        <h2 className="text-sm font-semibold text-ink">You’re in — how do you want to start?</h2>
+        <p className="mt-1 text-[13px] leading-relaxed text-ink-3">
+          Either way, you can reset from Settings later.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3">
+        <button
+          type="button"
+          onClick={() => void choose('demo')}
+          disabled={busy !== null}
+          className="rounded-(--radius-m) border border-edge bg-surface-2 p-4 text-left transition-colors duration-150 hover:border-(--accent) disabled:opacity-50"
+        >
+          <p className="text-[13px] font-semibold text-ink">
+            {busy === 'demo' ? 'Setting the table…' : 'Explore with demo data'}
+          </p>
+          <p className="mt-0.5 text-xs leading-relaxed text-ink-3">
+            A realistic household — accounts, spending history, scenarios — so every screen has
+            something to show. Wipe it whenever you’re ready.
+          </p>
+        </button>
+        <button
+          type="button"
+          onClick={() => void choose('empty')}
+          disabled={busy !== null}
+          className="rounded-(--radius-m) border border-edge bg-surface-2 p-4 text-left transition-colors duration-150 hover:border-(--accent) disabled:opacity-50"
+        >
+          <p className="text-[13px] font-semibold text-ink">
+            {busy === 'empty' ? 'Opening…' : 'Start empty'}
+          </p>
+          <p className="mt-0.5 text-xs leading-relaxed text-ink-3">
+            A blank slate. Add accounts by hand or import a bank export — new accounts can be
+            created right from the import.
+          </p>
+        </button>
+      </div>
+      {error ? (
+        <p role="alert" className="mt-3 text-[13px] text-negative">
+          {error}
+        </p>
+      ) : null}
     </AuthFrame>
   )
 }

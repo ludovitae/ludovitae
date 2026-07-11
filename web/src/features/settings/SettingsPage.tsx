@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { MOCK } from '@/api/client'
+import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+import { api, ApiError, MOCK } from '@/api/client'
 import { usePatchSettings, useProfile, useUpdateProfile } from '@/api/queries'
 import type { Profile } from '@/api/types'
 import { Button } from '@/components/Button'
 import { Card, CardHeader } from '@/components/Card'
 import { Field, TextInput, Toggle } from '@/components/Field'
+import { Modal } from '@/components/Overlay'
 import { Skeleton } from '@/components/Skeleton'
 import { IconCheck } from '@/components/icons'
 import { useTheme } from '@/theme/ThemeProvider'
@@ -21,6 +24,7 @@ export function SettingsPage() {
         <AppearanceCard />
         <ProfileCard />
         <AiPanel />
+        <DangerZoneCard />
         {MOCK ? (
           <p className="px-1 text-[11px] text-ink-3">
             Running against the built-in mock API (VITE_MOCK=1) — data resets on reload, login state persists.
@@ -28,6 +32,144 @@ export function SettingsPage() {
         ) : null}
       </div>
     </>
+  )
+}
+
+/* --------------------------- danger zone (#27) ---------------------------- */
+
+const RESET_PHRASE = 'reset ludovitae'
+
+/** Restrained until expanded (attention rules): a quiet one-line card; the
+ * destructive actions and their explanations only render on demand, and every
+ * action requires typing the confirmation phrase. */
+function DangerZoneCard() {
+  const [open, setOpen] = useState(false)
+  const [confirming, setConfirming] = useState<'demo' | 'empty' | null>(null)
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between px-5 py-4">
+        <div>
+          <h2 className="text-sm font-semibold text-ink">Danger zone</h2>
+          <p className="mt-0.5 text-xs text-ink-3">Start from scratch — with demo numbers, or empty</p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={() => setOpen(!open)} aria-expanded={open}>
+          {open ? 'Hide' : 'Show'}
+        </Button>
+      </div>
+      {open ? (
+        <div className="flex flex-col divide-y divide-(--border) border-t border-edge px-5">
+          <DangerRow
+            title="Reset to demo data"
+            hint="Replace everything with the demo household — a safe playground"
+            action="Reset to demo data"
+            onClick={() => setConfirming('demo')}
+          />
+          <DangerRow
+            title="Erase everything"
+            hint="Wipe all financial data. Your password, theme and AI settings stay"
+            action="Erase everything"
+            onClick={() => setConfirming('empty')}
+          />
+        </div>
+      ) : null}
+      {confirming ? (
+        <ResetConfirmModal mode={confirming} onClose={() => setConfirming(null)} />
+      ) : null}
+    </Card>
+  )
+}
+
+function DangerRow({
+  title,
+  hint,
+  action,
+  onClick,
+}: {
+  title: string
+  hint: string
+  action: string
+  onClick: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 py-4">
+      <div>
+        <p className="text-[13px] font-medium text-ink">{title}</p>
+        <p className="text-xs text-ink-3">{hint}</p>
+      </div>
+      <Button variant="danger" size="sm" onClick={onClick} className="border border-(--negative)">
+        {action}
+      </Button>
+    </div>
+  )
+}
+
+function ResetConfirmModal({ mode, onClose }: { mode: 'demo' | 'empty'; onClose: () => void }) {
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const [phrase, setPhrase] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const ready = phrase === RESET_PHRASE
+
+  async function confirm(e: FormEvent) {
+    e.preventDefault()
+    if (!ready || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.admin.reset(mode, phrase)
+      // #27: full app-state invalidation — every cached query re-fetches
+      await qc.invalidateQueries()
+      navigate('/', { replace: true })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not reach the server.')
+      setBusy(false)
+    }
+  }
+
+  const title = mode === 'demo' ? 'Reset to demo data?' : 'Erase everything?'
+  return (
+    <Modal title={title} onClose={onClose}>
+      <form onSubmit={(e) => void confirm(e)} className="flex flex-col gap-4">
+        <p className="text-[13px] leading-relaxed text-ink-2">
+          {mode === 'demo'
+            ? 'All of your financial data is replaced by the demo household.'
+            : 'All accounts, transactions, flows, goals, scenarios and household members are wiped.'}{' '}
+          A backup is saved first, and your password, theme and AI settings are kept.
+        </p>
+        <Field label={`Type “${RESET_PHRASE}” to continue`}>
+          {(id) => (
+            <TextInput
+              id={id}
+              value={phrase}
+              autoFocus
+              autoComplete="off"
+              onChange={(e) => setPhrase(e.target.value)}
+              placeholder={RESET_PHRASE}
+            />
+          )}
+        </Field>
+        {error ? (
+          <p role="alert" className="text-[13px] text-negative">
+            {error}
+          </p>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Keep my data
+          </Button>
+          <Button
+            variant="danger"
+            type="submit"
+            disabled={!ready || busy}
+            className="border border-(--negative)"
+          >
+            {busy ? 'Resetting…' : mode === 'demo' ? 'Reset to demo data' : 'Erase everything'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
