@@ -12,7 +12,7 @@
  * server's `gol.ENGINE_VERSION`. The VITE_MOCK fixtures are generated from that
  * same engine; a vitest guard asserts the committed fixtures still carry this
  * version, so a server-side engine bump can't ship stale mock goldens. */
-export const ENGINE_VERSION = '2'
+export const ENGINE_VERSION = '3'
 
 const LAST_SEEN_KEY = 'gol.engine.lastSeen'
 const DISMISSED_KEY = 'gol.engine.dismissed'
