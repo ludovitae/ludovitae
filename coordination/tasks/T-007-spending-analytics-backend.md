@@ -136,3 +136,49 @@ DECISIONS entries:
   transfers, +14 rules/layering, +4 freshness, +4 AI budget/ledger, +5
   analytics endpoints, +5 seed acceptance; contract walk + 401 sweep
   extended in place. Sim/golden/migration suites untouched and green.
+- 2026-07-11 (backend-dev): coordinator ruling passes applied (API.md
+  2e36077 + 860b098), commit 26c4421. (1) Migration 0004
+  transfer_pair_tombstones: unpair now tombstones the pair — auto-pairing
+  never re-links it (regression-tested across re-import); tombstoned pairs
+  are ALSO removed from /transfers/candidates — re-linking is manual POST
+  /transfers/pair only, which clears the tombstone (interpretation choice,
+  flag if the queue should keep showing them). (2) recurring entries carry
+  amount_variability_pct = pstdev/median×100 (1dp); seed demo: Netflix 6.6,
+  Spotify 0.0, weekly groceries >5 — segmentation works as intended.
+  (3) POST /transfers/candidates/dismiss (204) reuses the tombstone table;
+  409 already_paired when either leg is paired; 404/422 as with pair.
+  Dismissals survive re-imports (tested). (4) ?uncategorized=1 excludes
+  transfer-paired rows (tested). (5) Verified: api_key_last4 is null before
+  a key exists (pinned in walk + defaults test); /ai/usage by_purpose =
+  {input_tokens, output_tokens, est_cost_usd} (pinned in test_ai_admin).
+  (6) possibly_forgotten additionally requires monthly_equivalent ≤ 100
+  (FORGOTTEN_MAX_MONTHLY_EQ); rent-scale flat bills stay recurring but not
+  "forgotten" (tested). Upgrade of an existing 0003 DB to 0004 verified.
+- 2026-07-11 (backend-dev): forecast/hotspots shape comparison vs the T-008
+  mock (ws/spending-fe web/src/api/mock/analytics.ts), for coordinator
+  reconciliation — API.md/backend behavior wins per instruction:
+  (a) forecast.variable_by_category: mock emits {category, totals:
+  number[]} parallel to months; backend emits {category, monthly_avg:
+  number} (task-log pinned shape). FE must adapt or contract must choose.
+  (b) forecast recurring series: mock projects a flat monthly sum for ALL
+  cadences; backend lumps annual charges in their anniversary month.
+  (c) hotspots windows: mock recent = trailing 3 months INCLUDING current
+  partial, baseline = `months` before that; backend recent = last N full
+  months (N = months param), baseline = N full months before, current
+  partial month excluded.
+  (d) category_spikes: mock flags |delta| ≥ 10% with baseline ≥ $25 (drops
+  included, sorted by |delta|); backend flags increases only, delta ≥ +20%,
+  baseline ≥ $20.
+  (e) top_merchants: mock top 8 over recent+baseline, raw payee keys;
+  backend top 10 over the recent window with store-number-normalized payee
+  grouping.
+  (f) possibly_forgotten low-variance: mock requires price_change_pct == 0
+  and last == typical exactly; backend uses amount_variability_pct ≤ 5%
+  (the new ruling field). Mock's ≤$100 cap now matches ruling 5.
+  (g) price_increases: mock has no `active` filter; backend requires
+  active. Mock also zeroes price_change_pct when |change| < 1%; backend
+  reports the raw rounded value.
+  (h) FE RecurringCharge type lacks amount_variability_pct (predates the
+  ruling) — additive, FE adds the field.
+- 2026-07-11 (backend-dev): final — 219 server tests green, ruff clean,
+  server boots; status remains review for coordinator merge.
