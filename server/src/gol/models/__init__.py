@@ -261,6 +261,25 @@ class TransferPairTombstone(Base):
     )
 
 
+class ImportPreset(Base):
+    """Saved CSV column mapping per institution (v1.2.2, T-009). Keyed by the
+    header fingerprint — sha256 of the lowercased, sorted, comma-joined CSV
+    header list — so re-uploading the same institution's export auto-applies
+    the mapping (and flip_signs) without re-mapping columns."""
+
+    __tablename__ = "import_presets"
+    __table_args__ = (
+        UniqueConstraint("header_fingerprint", name="uq_import_preset_fingerprint"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    header_fingerprint: Mapped[str] = mapped_column(String(64))
+    mapping: Mapped[dict] = mapped_column(JSON)
+    flip_signs: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Scenario(Base):
     __tablename__ = "scenarios"
 
