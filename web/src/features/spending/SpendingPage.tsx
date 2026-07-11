@@ -11,6 +11,9 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
+  useAccounts,
+  useCreateFlow,
+  useDeleteFlow,
   useFlows,
   useHousehold,
   useObservedSpending,
@@ -22,7 +25,7 @@ import type { Flow, SpendingCategory, SpendingKind, SpendingProfile } from '@/ap
 import { Button } from '@/components/Button'
 import { Card, CardHeader } from '@/components/Card'
 import { EmptyState } from '@/components/EmptyState'
-import { Field, Select, TextInput } from '@/components/Field'
+import { Field, Select, TextInput, Toggle } from '@/components/Field'
 import { Modal } from '@/components/Overlay'
 import { Skeleton } from '@/components/Skeleton'
 import { IconPlus, IconTrash, IconWarning } from '@/components/icons'
@@ -503,12 +506,14 @@ function Bar({ value, max, color }: { value: number | null; max: number; color: 
 }
 
 /* ------------------------------ flows card -------------------------------- */
+/* T-009: full add/edit/delete via modal — the first-mile path to a real
+ * baseline is typing in salary, mortgage, and contributions by hand. */
 
 function FlowsCard({ flows }: { flows: Flow[] }) {
   const { data: members } = useHousehold()
   const patch = usePatchFlow()
+  const [editing, setEditing] = useState<Flow | 'new' | null>(null)
 
-  if (flows.length === 0) return null
   const kindBadge: Record<Flow['kind'], string> = {
     income: 'text-positive',
     expense: 'text-negative',
@@ -520,50 +525,275 @@ function FlowsCard({ flows }: { flows: Flow[] }) {
       <CardHeader
         title="Recurring flows"
         hint="Income, fixed payments, and contributions — assign an owner so retirement timing lands on the right person"
+        action={
+          flows.length > 0 ? (
+            <Button variant="primary" size="sm" onClick={() => setEditing('new')}>
+              <IconPlus width={15} height={15} /> Add flow
+            </Button>
+          ) : undefined
+        }
       />
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-edge text-left text-xs text-ink-3">
-              <th className="px-5 py-2 font-medium">Flow</th>
-              <th className="px-4 py-2 font-medium">Kind</th>
-              <th className="num px-4 py-2 text-right font-medium">Monthly</th>
-              <th className="px-4 py-2 font-medium">Owner</th>
-              <th className="px-4 py-2 font-medium">Ends</th>
-            </tr>
-          </thead>
-          <tbody>
-            {flows.map((f) => (
-              <tr key={f.id} className="border-b border-edge last:border-0">
-                <td className="px-5 py-2 font-medium text-ink">{f.name}</td>
-                <td className={`px-4 py-2 text-[12px] font-medium capitalize ${kindBadge[f.kind]}`}>{f.kind}</td>
-                <td className="num px-4 py-2 text-right text-ink">{formatMoney(f.amount_monthly)}</td>
-                <td className="px-4 py-2">
-                  <Select
-                    aria-label={`Owner of ${f.name}`}
-                    value={f.member_id == null ? '' : String(f.member_id)}
-                    onChange={(e) =>
-                      patch.mutate([f.id, { member_id: e.target.value === '' ? null : Number(e.target.value) }])
-                    }
-                    className="h-8 w-36 text-[13px]"
-                  >
-                    <option value="">Household</option>
-                    {(members ?? []).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </Select>
-                </td>
-                <td className="px-4 py-2 text-[12px] text-ink-3">
-                  {f.end_date ? f.end_date.slice(0, 7) : f.ends_at_retirement ? 'at retirement' : '—'}
-                </td>
+      {flows.length === 0 ? (
+        <EmptyState
+          illustration="coins"
+          title="No flows yet"
+          hint="The simulation runs on these: salary in, mortgage out, 401(k) contributions aside. Add the big ones first."
+          action={
+            <Button variant="primary" onClick={() => setEditing('new')}>
+              <IconPlus width={16} height={16} /> Add flow
+            </Button>
+          }
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-edge text-left text-xs text-ink-3">
+                <th className="px-5 py-2 font-medium">Flow</th>
+                <th className="px-4 py-2 font-medium">Kind</th>
+                <th className="num px-4 py-2 text-right font-medium">Monthly</th>
+                <th className="px-4 py-2 font-medium">Owner</th>
+                <th className="px-4 py-2 font-medium">Ends</th>
+                <th className="px-4 py-2" aria-hidden />
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {flows.map((f) => (
+                <tr key={f.id} className="group border-b border-edge last:border-0">
+                  <td className="px-5 py-2 font-medium text-ink">{f.name}</td>
+                  <td className={`px-4 py-2 text-[12px] font-medium capitalize ${kindBadge[f.kind]}`}>{f.kind}</td>
+                  <td className="num px-4 py-2 text-right text-ink">{formatMoney(f.amount_monthly)}</td>
+                  <td className="px-4 py-2">
+                    <Select
+                      aria-label={`Owner of ${f.name}`}
+                      value={f.member_id == null ? '' : String(f.member_id)}
+                      onChange={(e) =>
+                        patch.mutate([f.id, { member_id: e.target.value === '' ? null : Number(e.target.value) }])
+                      }
+                      className="h-8 w-36 text-[13px]"
+                    >
+                      <option value="">Household</option>
+                      {(members ?? []).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </td>
+                  <td className="px-4 py-2 text-[12px] text-ink-3">
+                    {f.end_date ? f.end_date.slice(0, 7) : f.ends_at_retirement ? 'at retirement' : '—'}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+                      onClick={() => setEditing(f)}
+                      aria-label={`Edit flow ${f.name}`}
+                    >
+                      Edit
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {editing !== null ? (
+        <FlowFormModal flow={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
+      ) : null}
     </Card>
+  )
+}
+
+/* ------------------------- flow add/edit modal ---------------------------- */
+
+const FLOW_KINDS: { value: Flow['kind']; label: string; hint: string }[] = [
+  { value: 'income', label: 'Income', hint: 'Money in — salary, rent collected' },
+  { value: 'expense', label: 'Expense', hint: 'Fixed payments — mortgage, insurance' },
+  { value: 'contribution', label: 'Contribution', hint: 'Savings moved into an account' },
+]
+
+function FlowFormModal({ flow, onClose }: { flow: Flow | null; onClose: () => void }) {
+  const create = useCreateFlow()
+  const patch = usePatchFlow()
+  const del = useDeleteFlow()
+  const { data: members } = useHousehold()
+  const { data: accounts } = useAccounts()
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+
+  const [name, setName] = useState(flow?.name ?? '')
+  const [kind, setKind] = useState<Flow['kind']>(flow?.kind ?? 'income')
+  const [amount, setAmount] = useState(flow ? String(flow.amount_monthly) : '')
+  const [growth, setGrowth] = useState(flow ? String(flow.annual_growth_pct) : '0')
+  const [memberId, setMemberId] = useState<number | null>(flow?.member_id ?? null)
+  const [endsAtRetirement, setEndsAtRetirement] = useState(flow?.ends_at_retirement ?? true)
+  const [accountId, setAccountId] = useState<number | null>(flow?.account_id ?? null)
+  const [startDate, setStartDate] = useState(flow?.start_date ?? '')
+  const [endDate, setEndDate] = useState(flow?.end_date ?? '')
+
+  const busy = create.isPending || patch.isPending || del.isPending
+  const amountNum = Number(amount.replace(/[$,\s]/g, ''))
+  const growthNum = Number(growth.replace(/[%\s]/g, ''))
+  const valid =
+    name.trim().length > 0 &&
+    Number.isFinite(amountNum) &&
+    amountNum >= 0 &&
+    Number.isFinite(growthNum) &&
+    (kind !== 'contribution' || accountId !== null)
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    if (!valid || busy) return
+    const body = {
+      name: name.trim(),
+      kind,
+      amount_monthly: amountNum,
+      annual_growth_pct: growthNum,
+      start_date: startDate || null,
+      end_date: endDate || null,
+      account_id: kind === 'contribution' ? accountId : null,
+      category: flow?.category ?? '',
+      member_id: memberId,
+      ends_at_retirement: endsAtRetirement,
+    }
+    if (flow) patch.mutate([flow.id, body], { onSuccess: onClose })
+    else create.mutate([body], { onSuccess: onClose })
+  }
+
+  return (
+    <Modal title={flow ? `Edit ${flow.name}` : 'Add flow'} onClose={onClose}>
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <Field label="Name">
+          {(id) => (
+            <TextInput
+              id={id}
+              autoFocus
+              value={name}
+              placeholder="Salary"
+              onChange={(e) => setName(e.target.value)}
+            />
+          )}
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Kind" hint={FLOW_KINDS.find((k) => k.value === kind)?.hint}>
+            {(id) => (
+              <Select id={id} value={kind} onChange={(e) => setKind(e.target.value as Flow['kind'])}>
+                {FLOW_KINDS.map((k) => (
+                  <option key={k.value} value={k.value}>
+                    {k.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Monthly amount">
+            {(id) => (
+              <TextInput
+                id={id}
+                inputMode="decimal"
+                className="num"
+                value={amount}
+                placeholder="2500"
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            )}
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Growth %/yr" hint="Raises, rent increases — 0 for fixed">
+            {(id) => (
+              <TextInput
+                id={id}
+                inputMode="decimal"
+                className="num"
+                value={growth}
+                onChange={(e) => setGrowth(e.target.value)}
+              />
+            )}
+          </Field>
+          <Field label="Owner" hint="Income stops at this person's retirement">
+            {(id) => (
+              <Select
+                id={id}
+                value={memberId == null ? '' : String(memberId)}
+                onChange={(e) => setMemberId(e.target.value === '' ? null : Number(e.target.value))}
+              >
+                <option value="">Household / shared</option>
+                {(members ?? []).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        </div>
+        {kind === 'contribution' ? (
+          <Field label="Into account" hint="Contributions need a destination">
+            {(id) => (
+              <Select
+                id={id}
+                value={accountId == null ? '' : String(accountId)}
+                onChange={(e) => setAccountId(e.target.value === '' ? null : Number(e.target.value))}
+              >
+                <option value="">Choose an account…</option>
+                {(accounts ?? []).map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        ) : null}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Starts" hint="Blank = already running">
+            {(id) => <TextInput id={id} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />}
+          </Field>
+          <Field label="Ends" hint="Blank = open-ended">
+            {(id) => <TextInput id={id} type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />}
+          </Field>
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-(--radius-s) bg-surface-2 px-3 py-2.5">
+          <div>
+            <p className="text-[13px] font-medium text-ink">Ends at retirement</p>
+            <p className="text-[11px] text-ink-3">Stops when the owner (or the last earner) retires</p>
+          </div>
+          <Toggle checked={endsAtRetirement} onChange={setEndsAtRetirement} label="Ends at retirement" />
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          {flow ? (
+            confirmingDelete ? (
+              <Button
+                variant="danger"
+                onClick={() => del.mutate([flow.id], { onSuccess: onClose })}
+                onBlur={() => setConfirmingDelete(false)}
+                disabled={busy}
+                aria-label={`Confirm delete flow ${flow.name}`}
+              >
+                Delete for sure?
+              </Button>
+            ) : (
+              <Button variant="ghost" onClick={() => setConfirmingDelete(true)} aria-label={`Delete flow ${flow.name}`}>
+                <IconTrash width={14} height={14} /> Delete
+              </Button>
+            )
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" disabled={!valid || busy}>
+              {busy ? 'Saving…' : flow ? 'Save changes' : 'Add flow'}
+            </Button>
+          </div>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
