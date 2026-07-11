@@ -11,6 +11,7 @@ Pure: callers pass occurrences and `today`.
 from __future__ import annotations
 
 import datetime as dt
+import math
 import re
 import statistics
 from collections import Counter
@@ -96,6 +97,13 @@ def detect_recurring(occurrences: list[Occurrence], today: dt.date) -> list[Recu
     """
     groups: dict[str, list[Occurrence]] = {}
     for occ in occurrences:
+        # Defense in depth: the import layer (gol.importers.base.amount_ok) already
+        # rejects non-finite money before it can reach the DB, so amounts read back
+        # here are finite. Guard anyway — a NaN/inf slipping in (e.g. a future
+        # non-gated ingest path) would otherwise blow up statistics.median/pstdev
+        # with an AttributeError and surface as a 500 instead of being skipped.
+        if not math.isfinite(occ.amount):
+            continue
         key = normalize_payee(occ.payee)
         if key:
             groups.setdefault(key, []).append(occ)
