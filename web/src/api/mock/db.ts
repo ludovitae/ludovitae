@@ -338,7 +338,8 @@ export const transactions: Transaction[] = (() => {
     category: string,
     source: Transaction['category_source'] = 'rule',
     transfer_pair_id: number | null = null,
-  ) =>
+  ) => {
+    if (date > today) return // a ledger never holds future transactions
     out.push({
       id: id++,
       account_id,
@@ -349,6 +350,7 @@ export const transactions: Transaction[] = (() => {
       transfer_pair_id,
       category_source: category === '' ? 'none' : source,
     })
+  }
 
   for (let m = 23; m >= 0; m--) {
     const iso = (day: number) => monthISO(m, day)
@@ -376,11 +378,14 @@ export const transactions: Transaction[] = (() => {
       push(12, iso(s.day), -s.amount(m), s.payee, s.category)
     }
 
-    // checking→card payment, auto-paired on import (exact amount, 1 day apart)
+    // checking→card payment, auto-paired on import (exact amount, 1 day
+    // apart). Both legs or neither — never an orphaned pair id.
     const payment = Math.round((1250 + rng() * 450) * 100) / 100
     const pairId = 9000 + m
-    push(1, iso(20), -payment, 'Payment to Sapphire Card', '', 'none', pairId)
-    push(12, iso(21), payment, 'Payment Thank You - Web', '', 'none', pairId)
+    if (iso(21) <= today) {
+      push(1, iso(20), -payment, 'Payment to Sapphire Card', '', 'none', pairId)
+      push(12, iso(21), payment, 'Payment Thank You - Web', '', 'none', pairId)
+    }
   }
 
   // Amazon Prime — annual cadence needs 3 occurrences to be detected.
