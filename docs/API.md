@@ -337,7 +337,16 @@ v1.1: top-level `retirement_age` is sugar for the `self` member's override
 
 ```json
 {
-  "engine_version": "1", "n_paths": 1000, "seed": 42,
+  "engine_version": "2",
+  "engine_notes": ["Taxable Social Security capped at 85% (was 100%)"],
+  "assumptions": {
+    "market": {"stocks_mean_pct": 7.0, "stocks_vol_pct": 15.0,
+               "bonds_mean_pct": 3.5, "bonds_vol_pct": 7.0,
+               "cash_mean_pct": 1.5, "cash_vol_pct": 0.5},
+    "inflation_pct": 2.5, "effective_tax_rate_pct": 18.0,
+    "ss_taxable_share": 0.85, "engine_version": "2"
+  },
+  "n_paths": 1000, "seed": 42,
   "start_year": 2026, "ages": [46, 47, ...],
   "deterministic": {"net_worth": [...], "invested": [...], "cash": [...],
                      "property": [...], "debt": [...]},
@@ -358,6 +367,13 @@ v1.1: top-level `retirement_age` is sugar for the `self` member's override
 
 Arrays are annual (one value per age, year-end). Synchronous; target < 1.5s at
 1000 paths.
+
+v1.1.1 (engine v2, T-011a): `engine_notes` lists human-readable behavior
+changes since the prior engine version; `assumptions` reflects the resolved
+PlanInputs the run actually used (scenario overrides included), never
+re-read from the DB; the sim result cache is keyed by engine version. A
+future `assumptions.tax_model` field ("flat" | "brackets") is reserved for
+the T-012 phase-2 integration.
 
 v1.1: `ages` is the `self` member's age axis. `milestones` (sorted by age)
 carries every member's retirement / SS-claim / RMD-start events under the
