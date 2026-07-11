@@ -414,3 +414,9 @@ Restore is manual in this phase (README
 "Backups & restore"); `POST /import/restore` is deferred with the round-trip
 test that belongs to it. Backups: pre-migration (keep 5) + daily snapshots
 (keep 14) in `data/backups/`, 0600.
+
+Write-time person validation (v1.2.2, #7): `POST /household` and
+`PATCH /household/{id}` reject a future `birth_year` or a `life_expectancy`
+below current age with 422 `invalid_person_data` (mirrors the simulate-time
+`invalid_plan_horizon` conditions; that guard remains as defense in depth).
+`retirement_age` is clamped, never rejected, in both places.
