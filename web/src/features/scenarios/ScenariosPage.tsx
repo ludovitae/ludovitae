@@ -26,7 +26,14 @@ import { Skeleton } from '@/components/Skeleton'
 import { Slider } from '@/components/Slider'
 import { IconCheck, IconPin, IconPlus, IconX } from '@/components/icons'
 import { formatMoney, formatMoneyCompact, formatProbability } from '@/lib/format'
-import { cleanParams, paramsEqual, serializeParams } from '@/lib/scenarioParams'
+import {
+  cleanParams,
+  effectiveMemberTiming,
+  paramsEqual,
+  serializeParams,
+  withMemberOverride,
+} from '@/lib/scenarioParams'
+import { SS_CLAIM_MAX, SS_CLAIM_MIN, ssClaimFactor } from '@/lib/ssFactor'
 import { useDebounced } from '@/lib/useDebounced'
 import { PageHeader } from '@/layout/AppShell'
 
@@ -86,9 +93,13 @@ export function ScenariosPage() {
   }
 
   const dirty = !paramsEqual(draft, active.params)
-  const retirementAge = draft.retirement_age ?? self.retirement_age ?? 65
+  const retirementAge =
+    effectiveMemberTiming(draft, self.id, 'retirement_age', self.retirement_age, true) ?? 65
   const spending = draft.annual_retirement_spending ?? profile.annual_retirement_spending
   const savingsDelta = draft.monthly_savings_delta ?? 0
+  const spendingDelta = draft.spending_delta_pct ?? 0
+  const retiringMembers = (household ?? []).filter((m) => m.retirement_age != null)
+  const ssMembers = (household ?? []).filter((m) => m.ss_monthly_at_fra != null)
 
   function togglePin(id: number) {
     setPinned((prev) => {
@@ -134,33 +145,72 @@ export function ScenariosPage() {
             hint={active.is_baseline ? 'Tweaks are a diff against your real plan' : active.description || undefined}
           />
           <div className="flex flex-col gap-5 px-5 pt-2 pb-5">
-            <Slider
-              label="Retirement age"
-              value={retirementAge}
-              min={45}
-              max={75}
-              format={(v) => String(v)}
-              onChange={(v) => setDraft({ ...draft, retirement_age: v })}
-            />
-            <Slider
-              label="Monthly savings"
-              value={savingsDelta}
-              min={-3000}
-              max={3000}
-              step={100}
-              format={(v) => (v === 0 ? 'as today' : `${v > 0 ? '+' : '−'}${formatMoney(Math.abs(v))}/mo`)}
-              onChange={(v) => setDraft({ ...draft, monthly_savings_delta: v })}
-              hint="Relative to what you save now"
-            />
-            <Slider
-              label="Retirement spending"
-              value={spending}
-              min={30000}
-              max={160000}
-              step={2500}
-              format={(v) => `${formatMoneyCompact(v)}/yr`}
-              onChange={(v) => setDraft({ ...draft, annual_retirement_spending: v })}
-            />
+            <div className="flex flex-col gap-4">
+              <p className="-mb-1 text-[11px] font-semibold tracking-wide text-ink-3 uppercase">Timing</p>
+              {retiringMembers.map((m) => (
+                <Slider
+                  key={`retire-${m.id}`}
+                  label={`Retirement age — ${firstName(m.name)}`}
+                  value={
+                    effectiveMemberTiming(draft, m.id, 'retirement_age', m.retirement_age, m.role === 'self') ?? 65
+                  }
+                  min={45}
+                  max={75}
+                  format={(v) => String(v)}
+                  onChange={(v) =>
+                    setDraft(
+                      withMemberOverride(draft, m.id, 'retirement_age', v, m.retirement_age, m.role === 'self'),
+                    )
+                  }
+                />
+              ))}
+              {ssMembers.map((m) => (
+                <Slider
+                  key={`ss-${m.id}`}
+                  label={`SS claim age — ${firstName(m.name)}`}
+                  value={effectiveMemberTiming(draft, m.id, 'ss_claim_age', m.ss_claim_age ?? 67, false) ?? 67}
+                  min={SS_CLAIM_MIN}
+                  max={SS_CLAIM_MAX}
+                  format={(v) => `${v} → ${Math.round(ssClaimFactor(v) * 100)}%`}
+                  hint="Share of the full (age-67) benefit"
+                  onChange={(v) =>
+                    setDraft(withMemberOverride(draft, m.id, 'ss_claim_age', v, m.ss_claim_age, false))
+                  }
+                />
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <p className="-mb-1 text-[11px] font-semibold tracking-wide text-ink-3 uppercase">Money</p>
+              <Slider
+                label="Monthly savings"
+                value={savingsDelta}
+                min={-3000}
+                max={3000}
+                step={100}
+                format={(v) => (v === 0 ? 'as today' : `${v > 0 ? '+' : '−'}${formatMoney(Math.abs(v))}/mo`)}
+                onChange={(v) => setDraft({ ...draft, monthly_savings_delta: v })}
+                hint="Relative to what you save now"
+              />
+              <Slider
+                label="Everyday spending"
+                value={spendingDelta}
+                min={-30}
+                max={30}
+                format={(v) => (v === 0 ? 'as planned' : `${v > 0 ? '+' : ''}${v}%`)}
+                onChange={(v) => setDraft({ ...draft, spending_delta_pct: v })}
+                hint="Scales spending categories and expense flows"
+              />
+              <Slider
+                label="Retirement spending"
+                value={spending}
+                min={30000}
+                max={160000}
+                step={2500}
+                format={(v) => `${formatMoneyCompact(v)}/yr`}
+                onChange={(v) => setDraft({ ...draft, annual_retirement_spending: v })}
+              />
+            </div>
 
             <EventChips
               events={draft.events ?? []}
@@ -207,6 +257,10 @@ export function ScenariosPage() {
       </div>
     </>
   )
+}
+
+function firstName(name: string): string {
+  return name.trim().split(/\s+/)[0] ?? name
 }
 
 /* ------------------------------- tabs ------------------------------------ */
