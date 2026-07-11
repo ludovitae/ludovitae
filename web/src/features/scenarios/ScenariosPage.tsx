@@ -12,9 +12,11 @@ import {
   useScenarios,
   useSimulation,
 } from '@/api/queries'
-import type { Scenario, ScenarioEvent, ScenarioParams } from '@/api/types'
+import type { HouseholdMember, Scenario, ScenarioEvent, ScenarioParams } from '@/api/types'
 import { FanChart } from '@/charts/FanChart'
 import type { FanChartSeries } from '@/charts/FanChart'
+import { toMarkers } from '@/charts/milestones'
+import type { MarkerDatum } from '@/charts/milestones'
 import { ProbabilityGauge } from '@/charts/Gauge'
 import { Button } from '@/components/Button'
 import { Card, CardHeader } from '@/components/Card'
@@ -187,16 +189,17 @@ export function ScenariosPage() {
             <CompareView
               results={compare.data.results}
               pinned={pinned}
+              activeId={active.id}
+              household={household ?? []}
               showBands={compareBands}
               onToggleBands={setCompareBands}
               onUnpin={togglePin}
-              profileRetirement={self.retirement_age ?? 65}
             />
           ) : (
             <SingleView
               simData={sim.data}
               isFetching={sim.isFetching}
-              retirementAge={retirementAge}
+              household={household ?? []}
               scenarioName={active.is_baseline && dirty ? 'Draft' : active.name}
             />
           )}
@@ -261,15 +264,24 @@ function ScenarioTabs({
 
 /* ---------------------------- single result ------------------------------ */
 
+/** Household lookup for compact marker chips (first names). */
+function markersFor(
+  milestones: Parameters<typeof toMarkers>[0] | undefined,
+  household: HouseholdMember[],
+): MarkerDatum[] {
+  if (!milestones || milestones.length === 0) return []
+  return toMarkers(milestones, (id) => household.find((m) => m.id === id)?.name)
+}
+
 function SingleView({
   simData,
   isFetching,
-  retirementAge,
+  household,
   scenarioName,
 }: {
   simData: ReturnType<typeof useSimulation>['data']
   isFetching: boolean
-  retirementAge: number
+  household: HouseholdMember[]
   scenarioName: string
 }) {
   if (!simData) {
@@ -308,14 +320,14 @@ function SingleView({
       <Card className={isFetching ? 'opacity-90 transition-opacity duration-150' : 'transition-opacity duration-150'}>
         <CardHeader
           title="Projected net worth"
-          hint="Shaded: 10–90th and 25–75th percentile outcomes · dashed: expected path"
+          hint="Shaded: 10–90th and 25–75th percentile outcomes · dashed: expected path · flags: life milestones"
         />
         <div className="px-4 pt-1 pb-4">
           <FanChart
             series={series}
             ages={simData.ages}
             startYear={simData.start_year}
-            refAge={retirementAge}
+            milestones={markersFor(simData.milestones, household)}
             height={360}
           />
         </div>
@@ -341,17 +353,19 @@ function EndStat({ label, value, big }: { label: string; value: number; big?: bo
 function CompareView({
   results,
   pinned,
+  activeId,
+  household,
   showBands,
   onToggleBands,
   onUnpin,
-  profileRetirement,
 }: {
   results: (ReturnType<typeof useSimulation>['data'] & { scenario_id: number; name: string })[]
   pinned: { id: number; slot: number }[]
+  activeId: number
+  household: HouseholdMember[]
   showBands: boolean
   onToggleBands: (v: boolean) => void
   onUnpin: (id: number) => void
-  profileRetirement: number
 }) {
   const colorFor = (id: number) =>
     CHART_SLOTS[pinned.find((p) => p.id === id)?.slot ?? 0] ?? CHART_SLOTS[0]
@@ -365,12 +379,18 @@ function CompareView({
     showBands,
   }))
 
+  // Milestones of ONE scenario only — the active one if pinned, else the
+  // first pinned. Overlaying every pinned scenario's marker set (even dimmed)
+  // turns to clutter beyond two scenarios; decision logged in T-006.
+  const milestoneSource = results.find((r) => r!.scenario_id === activeId) ?? first
+  const markers = markersFor(milestoneSource!.milestones, household)
+
   return (
     <>
       <Card>
         <CardHeader
           title="Compare scenarios"
-          hint="Median paths overlaid — shared probe reads all of them"
+          hint={`Median paths overlaid — shared probe reads all of them · milestones: ${milestoneSource!.name}`}
           action={
             <label className="flex items-center gap-2 text-xs text-ink-2">
               Bands
@@ -383,7 +403,7 @@ function CompareView({
             series={series}
             ages={first!.ages}
             startYear={first!.start_year}
-            refAge={profileRetirement}
+            milestones={markers}
             height={360}
             ariaLabel="Scenario comparison chart"
           />

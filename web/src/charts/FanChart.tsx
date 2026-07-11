@@ -1,12 +1,17 @@
 /** Net-worth projection fan chart — hand-rolled SVG per the dataviz skill.
  * Layered p10–p90 / p25–p75 bands, p50 line, dashed deterministic reference,
- * crosshair probe (pointer + keyboard), draw-in on mount, tweened data. */
+ * crosshair probe (pointer + keyboard), draw-in on mount, tweened data.
+ * v1.1: milestone markers — hairline + labeled chip per life event, staggered
+ * on collision, tweened alongside the bands, full label on probe/hover. */
 
 import { useCallback, useId, useMemo, useRef, useState } from 'react'
+import type { MilestoneKind } from '@/api/types'
 import { formatMoney, formatMoneyCompact } from '@/lib/format'
+import { MARKER_COLOR, layoutMarkers } from './milestones'
+import type { MarkerDatum, PlacedMarker } from './milestones'
 import { bandPath, extent, linePath, linScale, niceTicks } from './scale'
 import { useContainerWidth } from './useContainerWidth'
-import { useMountProgress, useTweenedMatrix } from './useTween'
+import { useMountProgress, useTweenedMatrix, useTweenedRecord } from './useTween'
 
 export interface FanChartSeries {
   name: string
@@ -20,22 +25,23 @@ export interface FanChartSeries {
 
 const M = { top: 12, right: 20, bottom: 30, left: 56 }
 const ROWS_PER_SERIES = 6 // p10 p25 p50 p75 p90 det(pad)
+const CHIP_TOP = 4
+const CHIP_H = 17
+const CHIP_ROW_STEP = 20
 
 export function FanChart({
   series,
   ages,
   startYear,
-  refAge,
-  refAgeLabel,
+  milestones,
   height = 320,
   ariaLabel = 'Projected net worth fan chart',
 }: {
   series: FanChartSeries[]
   ages: number[]
   startYear: number
-  /** vertical annotation, e.g. retirement age */
-  refAge?: number
-  refAgeLabel?: string
+  /** milestone markers (engine output mapped via toMarkers) */
+  milestones?: MarkerDatum[]
   height?: number
   ariaLabel?: string
 }) {
@@ -56,6 +62,14 @@ export function FanChart({
   const matrix = useTweenedMatrix(targetMatrix, 300)
   const mount = useMountProgress(400)
 
+  // ---- tween marker positions by identity so chips glide with sliders
+  const markerTargets = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const m of milestones ?? []) out[m.key] = m.age
+    return out
+  }, [milestones])
+  const markerAges = useTweenedRecord(markerTargets, 300)
+
   const innerW = Math.max(0, width - M.left - M.right)
   const innerH = Math.max(0, height - M.top - M.bottom)
   const n = ages.length
@@ -75,6 +89,17 @@ export function FanChart({
     const xs = ages.map((a) => x(a))
     return { x, y, xs, yMin, yMax }
   }, [width, n, matrix, series, ages, innerW, innerH])
+
+  const placedMarkers: PlacedMarker[] = useMemo(() => {
+    if (!geom || !milestones || milestones.length === 0 || n === 0) return []
+    const tweened = milestones.map((m) => ({ ...m, age: markerAges[m.key] ?? m.age }))
+    return layoutMarkers(tweened, geom.x, {
+      minAge: ages[0]!,
+      maxAge: ages[n - 1]!,
+      minX: M.left,
+      maxX: M.left + innerW,
+    })
+  }, [geom, milestones, markerAges, ages, n, innerW])
 
   const idxFromClientX = useCallback(
     (clientX: number) => {
@@ -116,6 +141,8 @@ export function FanChart({
     (a) => Number.isInteger(a) && a >= ages[0]! && a <= ages[n - 1]!,
   )
   const clipW = M.left + innerW * mount + 1
+  const probeMilestones =
+    probe !== null ? (milestones ?? []).filter((m) => m.age === ages[probe]) : []
 
   return (
     <div
@@ -209,28 +236,6 @@ export function FanChart({
           age
         </text>
 
-        {/* reference age annotation */}
-        {refAge !== undefined && refAge >= ages[0]! && refAge <= ages[n - 1]! ? (
-          <g>
-            <line
-              x1={geom.x(refAge)}
-              x2={geom.x(refAge)}
-              y1={M.top}
-              y2={M.top + innerH}
-              stroke="var(--chart-axis)"
-              strokeWidth="1"
-            />
-            <text
-              x={geom.x(refAge) + 5}
-              y={M.top + 10}
-              fill="var(--ink-3)"
-              fontSize="10"
-            >
-              {refAgeLabel ?? `retire ${refAge}`}
-            </text>
-          </g>
-        ) : null}
-
         {/* series */}
         <g clipPath={`url(#${clipId})`}>
           {series.map((s, i) => {
@@ -271,6 +276,38 @@ export function FanChart({
               </g>
             )
           })}
+
+          {/* milestone markers: hairline + labeled chip, staggered rows */}
+          {placedMarkers.map((p) => (
+            <g key={p.key} data-milestone={p.key}>
+              <title>{p.label}</title>
+              <line
+                x1={p.x}
+                x2={p.x}
+                y1={CHIP_TOP + CHIP_H / 2}
+                y2={M.top + innerH}
+                stroke={MARKER_COLOR[p.kind]}
+                strokeWidth="1"
+                opacity="0.55"
+              />
+              <g transform={`translate(${round1(p.left)}, ${CHIP_TOP + p.row * CHIP_ROW_STEP})`}>
+                <rect
+                  width={p.width}
+                  height={CHIP_H}
+                  rx={CHIP_H / 2}
+                  fill="var(--surface)"
+                  stroke={MARKER_COLOR[p.kind]}
+                  strokeOpacity="0.55"
+                />
+                <g transform="translate(7 3.5)" style={{ color: MARKER_COLOR[p.kind] }}>
+                  <MilestoneGlyph kind={p.kind} />
+                </g>
+                <text x={21} y={12} fontSize="10" fontWeight="500" fill="var(--ink-2)">
+                  {p.shortLabel}
+                </text>
+              </g>
+            </g>
+          ))}
         </g>
 
         {/* probe crosshair */}
@@ -306,6 +343,7 @@ export function FanChart({
           idx={probe}
           age={ages[probe]!}
           year={startYear + probe}
+          milestones={probeMilestones}
           leftPx={xs[probe]!}
           flip={(xs[probe]! - M.left) / Math.max(1, innerW) > 0.55}
         />
@@ -314,12 +352,50 @@ export function FanChart({
   )
 }
 
+/** Tiny 10×10 kind glyphs — stroke follows the marker color via currentColor. */
+function MilestoneGlyph({ kind }: { kind: MilestoneKind }) {
+  const common = {
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.4,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+  } as const
+  switch (kind) {
+    case 'retirement': // flag planted
+      return (
+        <g {...common}>
+          <path d="M2.5 9.5V1.5h5L6 3.5l1.5 2h-5" />
+        </g>
+      )
+    case 'ss_start': // coin
+      return (
+        <g {...common}>
+          <circle cx="5" cy="5.5" r="3.6" />
+          <path d="M5 3.7v3.6" />
+        </g>
+      )
+    case 'rmd_start': // forced distribution out
+      return (
+        <g {...common}>
+          <path d="M5 1.5v4.6M3.2 4.4 5 6.3l1.8-1.9" />
+          <path d="M2 9h6" />
+        </g>
+      )
+  }
+}
+
+function round1(v: number): number {
+  return Math.round(v * 10) / 10
+}
+
 function ProbeTooltip({
   series,
   matrix,
   idx,
   age,
   year,
+  milestones,
   leftPx,
   flip,
 }: {
@@ -328,6 +404,7 @@ function ProbeTooltip({
   idx: number
   age: number
   year: number
+  milestones: MarkerDatum[]
   leftPx: number
   flip: boolean
 }) {
@@ -359,6 +436,19 @@ function ProbeTooltip({
       <p className="mb-1.5 text-[11px] font-medium text-ink-3">
         Age {age} · {year}
       </p>
+      {milestones.length > 0 ? (
+        <div className="mb-1.5 flex flex-col gap-1 border-b border-edge pb-1.5">
+          {milestones.map((m) => (
+            <p key={m.key} className="flex items-center gap-1.5 text-[11px] font-medium text-ink">
+              <span
+                className="inline-block size-1.5 shrink-0 rounded-full"
+                style={{ background: MARKER_COLOR[m.kind] }}
+              />
+              {m.label}
+            </p>
+          ))}
+        </div>
+      ) : null}
       <div className="flex flex-col gap-1">
         {rows.map((r) => (
           <div key={r.key} className="flex items-center justify-between gap-4">

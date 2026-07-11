@@ -50,6 +50,52 @@ function matrixKey(m: number[][]): string {
   return k
 }
 
+/** Keyed scalar tween — values glide toward their targets per key; keys that
+ * appear snap into place, keys that vanish drop immediately. Used for
+ * milestone-marker positions so they move smoothly with slider drags.
+ * Reduced motion: everything snaps. */
+export function useTweenedRecord(
+  target: Record<string, number>,
+  duration = 300,
+): Record<string, number> {
+  const motionOK = useMotionOK()
+  const [current, setCurrent] = useState<Record<string, number>>(target)
+  const displayed = useRef<Record<string, number>>(target)
+  const raf = useRef<number>(0)
+  const key = Object.entries(target)
+    .map(([k, v]) => `${k}=${v}`)
+    .sort()
+    .join(';')
+
+  useEffect(() => {
+    const from = displayed.current
+    if (!motionOK) {
+      displayed.current = target
+      setCurrent(target)
+      return
+    }
+    const t0 = performance.now()
+    cancelAnimationFrame(raf.current)
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / duration)
+      const eased = easeOutCubic(t)
+      const next: Record<string, number> = {}
+      for (const [k, v] of Object.entries(target)) {
+        const f = from[k]
+        next[k] = f === undefined ? v : f + (v - f) * eased
+      }
+      displayed.current = next
+      setCurrent(next)
+      if (t < 1) raf.current = requestAnimationFrame(step)
+    }
+    raf.current = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, motionOK, duration])
+
+  return current
+}
+
 /** Single scalar tween (gauge sweep, hero numbers). */
 export function useTweenedValue(target: number, duration = 400): number {
   const [m] = [useTweenedMatrix([[target]], duration)]
