@@ -64,11 +64,12 @@ def golden_result():
 
 
 class TestGolden:
-    """Pinned seed 1234, 1000 paths — values re-locked for engine v1.1:
-    the golden household now takes RMDs from 75 (born 1980, 360k + ongoing
-    401(k) contributions tax-deferred), which forces taxed distributions and
-    moves every number vs the v1 goldens. The v1 numbers are still pinned by
-    test_no_tax_deferral_reproduces_v1_golden below."""
+    """Pinned seed 1234, 1000 paths — values re-locked for engine v2 (T-011):
+    taxable social security is capped at 85% (was 100%), so every post-claim
+    number rises vs the v1.1 goldens (SS take-home is now
+    ss * (1 - 0.85 * 0.18) instead of ss * (1 - 0.18)). Year-0 values are
+    unchanged — SS starts at 67. v1.1 -> v2 movement: success 0.737 -> 0.742,
+    ruin age 86.4 -> 86.5, final det NW 4,237,007.25 -> 4,335,800.73."""
 
     @pytest.fixture()
     def result(self, golden_result):
@@ -84,17 +85,15 @@ class TestGolden:
             assert len(series) == 47
 
     def test_pinned_values(self, result):
-        # Pre-RMD values match v1 exactly (year 0 below); ending values are
-        # lower than v1's because forced taxed distributions drag growth.
-        assert result["success_probability"] == pytest.approx(0.737)
-        assert result["median_ruin_age"] == pytest.approx(86.4)
+        assert result["success_probability"] == pytest.approx(0.742)
+        assert result["median_ruin_age"] == pytest.approx(86.5)
         assert result["deterministic"]["net_worth"][0] == pytest.approx(918_579.96)
-        assert result["deterministic"]["net_worth"][-1] == pytest.approx(4_237_007.25)
+        assert result["deterministic"]["net_worth"][-1] == pytest.approx(4_335_800.73)
         assert result["percentiles"]["p10"][0] == pytest.approx(825_671.68)
-        assert result["percentiles"]["p50"][-1] == pytest.approx(2_517_061.28)
-        assert result["ending_net_worth"]["p10"] == pytest.approx(-1_827_966.02)
-        assert result["ending_net_worth"]["p50"] == pytest.approx(2_517_061.28)
-        assert result["ending_net_worth"]["p90"] == pytest.approx(11_481_607.38)
+        assert result["percentiles"]["p50"][-1] == pytest.approx(2_575_871.74)
+        assert result["ending_net_worth"]["p10"] == pytest.approx(-1_738_542.06)
+        assert result["ending_net_worth"]["p50"] == pytest.approx(2_575_871.74)
+        assert result["ending_net_worth"]["p90"] == pytest.approx(11_567_603.35)
 
     def test_milestones(self, result):
         assert [(m["kind"], m["age"]) for m in result["milestones"]] == [
@@ -108,20 +107,24 @@ class TestGolden:
         ]
 
 
-def test_no_tax_deferral_reproduces_v1_golden():
-    """v1 engine parity: same household with no tax-deferred money (RMDs
-    can never fire) must still produce the exact v1 golden numbers."""
+def test_no_tax_deferral_golden():
+    """Same household with no tax-deferred money (RMDs can never fire):
+    tax-deferral accounting must not move money by itself. Through engine
+    v1.1 this pinned the exact v1 numbers; the v2 SS taxable cap (T-011)
+    deliberately ended v1 parity for any SS-receiving household, so these
+    are the re-pinned v2 numbers (v1.1 -> v2: success 0.739 -> 0.744, ruin
+    age 86.3 -> 86.5, final det NW 4,499,929.33 -> 4,603,767.29)."""
     r = run_simulation(base_inputs(tax_deferred0=0, td_routing=False),
                        n_paths=1000, seed=1234)
-    assert r["success_probability"] == pytest.approx(0.739)
-    assert r["median_ruin_age"] == pytest.approx(86.3)
+    assert r["success_probability"] == pytest.approx(0.744)
+    assert r["median_ruin_age"] == pytest.approx(86.5)
     assert r["deterministic"]["net_worth"][0] == pytest.approx(918_579.96)
-    assert r["deterministic"]["net_worth"][-1] == pytest.approx(4_499_929.33)
+    assert r["deterministic"]["net_worth"][-1] == pytest.approx(4_603_767.29)
     assert r["percentiles"]["p10"][0] == pytest.approx(825_671.68)
-    assert r["percentiles"]["p50"][-1] == pytest.approx(2_641_539.39)
-    assert r["ending_net_worth"]["p10"] == pytest.approx(-1_806_169.72)
-    assert r["ending_net_worth"]["p50"] == pytest.approx(2_641_539.39)
-    assert r["ending_net_worth"]["p90"] == pytest.approx(12_925_104.75)
+    assert r["percentiles"]["p50"][-1] == pytest.approx(2_691_121.17)
+    assert r["ending_net_worth"]["p10"] == pytest.approx(-1_735_489.59)
+    assert r["ending_net_worth"]["p50"] == pytest.approx(2_691_121.17)
+    assert r["ending_net_worth"]["p90"] == pytest.approx(13_027_976.22)
 
 
 def test_same_seed_identical_output():
@@ -308,6 +311,32 @@ def test_ss_claim_factor_affects_benefit_and_label():
         "age": 62, "year": 2028, "kind": "ss_start",
         "label": "Eve claims Social Security (70% of FRA)", "member_id": 1,
     }]
+
+
+def test_ss_taxed_on_85_pct_share_only():
+    """Engine v2 (T-011): at most 85% of social security is taxable, while
+    ordinary income stays fully taxed. Zero-growth, zero-inflation world,
+    20% effective rate, $1,000/mo salary + $1,000/mo SS from month 0:
+    monthly take-home = 1000 * 0.80 (income) + 1000 * (1 - 0.85 * 0.20) = 830
+    (SS) -> $19,560/yr. The v1 engine taxed SS in full: $19,200/yr."""
+    start_age = 70
+    horizon = 3 * 12
+    member = MemberSpec(
+        id=1, name="Sol", age0_months=start_age * 12, life_end_month=horizon,
+        ss_monthly=1_000, ss_start_month=0, ss_claim_age=67,
+    )
+    inputs = PlanInputs(
+        start_age=start_age, start_year=2026, horizon_months=horizon,
+        retirement_month=horizon, members=(member,),
+        flows=(FlowSpec("income", 1_000),),
+        annual_retirement_spending=0.0, inflation_mean_pct=0.0,
+        effective_tax_rate_pct=20.0, market=ZERO_GROWTH,
+    )
+    det = run_simulation(inputs, n_paths=1, seed=0)["deterministic"]
+    assert det["cash"] == pytest.approx([19_560.0, 39_120.0, 58_680.0])
+    # SS-heavy household nets more than under the v1 rule (100% taxable),
+    # which would have paid out 19,200.0 in year one.
+    assert det["cash"][0] > 19_200.0
 
 
 def test_milestones_beyond_horizon_or_in_past_are_omitted():
