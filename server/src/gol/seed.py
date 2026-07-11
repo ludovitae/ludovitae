@@ -1,7 +1,9 @@
 """`uv run gol-seed` — populate a realistic demo household (v1.1: two adults
 with staggered ages/retirements, a child, owned accounts and salaries,
 spending categories, and ~14 months of transactions so /spending/observed
-has something to say).
+has something to say; v1.2: a credit card with subscriptions — one with a
+price hike — an interest charge, auto-paired card payments, and stale vs
+fresh import timestamps so freshness/analytics demo well).
 
 Deterministic: amounts come from fixed formulas, never RNG. Idempotent-ish:
 refuses to run if accounts already exist unless --force. Never creates a
@@ -20,6 +22,7 @@ from gol.assembly import get_or_create_profile, get_or_create_settings
 from gol.db import run_migrations, session_factory
 from gol.importers.base import ParsedTransaction, dedupe_hash
 from gol.models import (
+    TRACK_FRESHNESS_TYPES,
     Account,
     BalanceSnapshot,
     Flow,
@@ -28,7 +31,9 @@ from gol.models import (
     Scenario,
     SpendingCategory,
     Transaction,
+    utcnow,
 )
+from gol.pairing import run_auto_pairing
 
 
 def _month_starts(months_back: int) -> list[dt.date]:
@@ -44,11 +49,15 @@ def _month_starts(months_back: int) -> list[dt.date]:
 
 
 def _add_txn(db, account_id: int, date: dt.date, amount: float,
-             payee: str, category: str | None) -> None:
+             payee: str, category: str | None,
+             category_source: str | None = None) -> None:
     parsed = ParsedTransaction(date=date, amount=amount, payee=payee, category=category)
+    if category_source is None:
+        category_source = "manual" if category is not None else "none"
     db.add(Transaction(
         account_id=account_id, date=date, amount=amount, payee=payee,
-        category=category, dedupe_hash=dedupe_hash(account_id, parsed),
+        category=category, category_source=category_source,
+        dedupe_hash=dedupe_hash(account_id, parsed),
     ))
 
 
@@ -68,8 +77,10 @@ def _seed_transactions(db, account_id: int) -> int:
                      -(28.0 + ((i * 5 + k * 11) % 35)), "Taqueria Luna", "dining")
             count += 1
         # utilities + fuel + streaming
+        # narrow wobble: stays a recurring bill without tripping the ≥5%
+        # price-increase flag (Netflix is the intended v1.2 demo hike)
         _add_txn(db, account_id, month_start + dt.timedelta(days=9),
-                 -(155.0 + ((i * 17) % 60)), "City Power & Water", "utilities")
+                 -(175.0 + ((i * 7) % 20)), "City Power & Water", "utilities")
         _add_txn(db, account_id, month_start + dt.timedelta(days=11),
                  -(48.0 + ((i * 9) % 22)), "QuickFuel", "gas")
         _add_txn(db, account_id, month_start + dt.timedelta(days=14),
@@ -78,6 +89,53 @@ def _seed_transactions(db, account_id: int) -> int:
         # monthly transfer to brokerage — excluded from observed spending
         _add_txn(db, account_id, month_start + dt.timedelta(days=1),
                  -1_500.0, "Transfer to Vanguard", "transfer")
+        count += 1
+    return count
+
+
+def _card_payment_amount(i: int) -> float:
+    """Deterministic monthly statement payment, varies a little."""
+    return 1_400.0 + (i * 37) % 300
+
+
+def _seed_card_transactions(db, card_id: int, checking_id: int) -> int:
+    """v1.2 demo data: card subscriptions (Netflix with a price hike in the
+    last 3 months, Spotify flat), dining/shopping swipes, one interest
+    charge, an annual renewal, and checking→card payments that auto-pair
+    (exact amount, 2 days apart). Full months only — no current-month rows."""
+    count = 0
+    months = _month_starts(15)[:-1]  # months -14..-1
+    for i, month_start in enumerate(months):
+        hike = i >= len(months) - 3
+        _add_txn(db, card_id, month_start + dt.timedelta(days=5),
+                 -(17.99 if hike else 15.49), "NETFLIX.COM",
+                 "subscriptions", "heuristic")
+        _add_txn(db, card_id, month_start + dt.timedelta(days=8),
+                 -10.99, "Spotify USA", "subscriptions", "heuristic")
+        # swipes: coffee twice + one marketplace order a month
+        for k in range(2):
+            _add_txn(db, card_id, month_start + dt.timedelta(days=4 + 11 * k),
+                     -(6.0 + ((i * 3 + k * 7) % 4) * 0.75), "Blue Bottle Coffee",
+                     "dining", "heuristic")
+            count += 1
+        _add_txn(db, card_id, month_start + dt.timedelta(days=16),
+                 -(42.0 + (i * 19) % 55), "Amazon Marketplace", None)
+        # checking→card payment: exact amount, opposite sign, 2 days apart —
+        # auto-pairs on seed (gol.pairing), leaving /transfers/candidates empty
+        amount = _card_payment_amount(i)
+        _add_txn(db, checking_id, month_start + dt.timedelta(days=19),
+                 -amount, "Payment to Sapphire Card", None)
+        _add_txn(db, card_id, month_start + dt.timedelta(days=21),
+                 amount, "PAYMENT THANK YOU", None)
+        count += 5
+    # one interest charge two months ago — real spending (DECISIONS #1)
+    _add_txn(db, card_id, months[-2] + dt.timedelta(days=24),
+             -23.51, "PURCHASE INTEREST CHARGE", "interest-fees", "heuristic")
+    count += 1
+    # annual domain renewal: three anniversaries (months -25, -13, -1)
+    for date in _month_starts(26)[0:25:12]:
+        _add_txn(db, card_id, date + dt.timedelta(days=11),
+                 -119.0, "DomainHost Renewal", None)
         count += 1
     return count
 
@@ -131,21 +189,25 @@ def seed(force: bool = False) -> None:
             Account(name="Honda CR-V", type="vehicle", growth_rate_pct=-9.0),
             Account(name="Mortgage", type="mortgage", institution="First National",
                     growth_rate_pct=5.25, notes="30yr fixed"),
+            Account(name="Sapphire Card", type="credit_card", institution="Chase"),
         ]
+        for acc in accounts:
+            acc.track_freshness = acc.type in TRACK_FRESHNESS_TYPES
         db.add_all(accounts)
         db.flush()
-        checking, savings, brokerage, k401, b403, hsa, house, car, mortgage = accounts
+        checking, savings, brokerage, k401, b403, hsa, house, car, mortgage, card = accounts
 
         balances_now = {
             checking.id: 12_400.0, savings.id: 41_000.0, brokerage.id: 262_000.0,
             k401.id: 388_000.0, b403.id: 176_000.0, hsa.id: 28_500.0,
             house.id: 545_000.0, car.id: 21_000.0, mortgage.id: 296_000.0,
+            card.id: 1_850.0,
         }
         # ~18 months of monthly history with mild drift for the dashboard chart.
         drift = {
             checking.id: 0.000, savings.id: 0.003, brokerage.id: 0.008,
             k401.id: 0.008, b403.id: 0.008, hsa.id: 0.007, house.id: 0.0025,
-            car.id: -0.008, mortgage.id: -0.0025,
+            car.id: -0.008, mortgage.id: -0.0025, card.id: 0.000,
         }
         months = _month_starts(18)
         for acc_id, now_amount in balances_now.items():
@@ -194,6 +256,19 @@ def seed(force: bool = False) -> None:
         ])
 
         txn_count = _seed_transactions(db, checking.id)
+        txn_count += _seed_card_transactions(db, card.id, checking.id)
+        db.flush()
+        # pair the checking→card payments exactly as an import would
+        paired = run_auto_pairing(db)
+
+        # v1.2 freshness demo: checking/card freshly imported, investment
+        # accounts a week old, savings well past the 35-day threshold (stale)
+        now = utcnow()
+        for acc in (checking, card):
+            acc.last_import_at = now
+        for acc in (brokerage, k401, b403, hsa):
+            acc.last_import_at = now - dt.timedelta(days=7)
+        savings.last_import_at = now - dt.timedelta(days=60)
 
         db.add_all([
             Goal(name="Sailboat", emoji="⛵", target_amount=60_000.0,
@@ -237,8 +312,9 @@ def seed(force: bool = False) -> None:
         ])
         db.commit()
         print(
-            "seeded demo household: 3 members, 9 accounts, 7 flows, "
-            f"7 spending categories, {txn_count} transactions, 3 goals, 3 scenarios"
+            "seeded demo household: 3 members, 10 accounts, 7 flows, "
+            f"7 spending categories, {txn_count} transactions "
+            f"({paired} transfer pairs), 3 goals, 3 scenarios"
         )
     finally:
         db.close()

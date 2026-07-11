@@ -55,6 +55,25 @@ and mark guidance. Requirements:
 5. **Import** — drag-drop, column-mapping preview table, duplicate report.
 6. **Auth** — first-run setup and login: minimal, centered, product-quality.
 
+## Attention economics (owner rule, 2026-07-11)
+
+The owner: *"lots of badges and warnings get lost on me eventually … my email
+badge has 400 unread mails."* Badges and warnings are a budget, not a free
+resource. Binding rules for any attention-drawing UI:
+
+- **Actionable-once, then gone.** A badge/warning must clear itself the
+  moment its underlying condition is handled or viewed-and-dismissed — never
+  accumulate as a standing count the owner learns to ignore.
+- **Counts cap and coalesce.** Never render an unbounded number (no "400").
+  Cap display at 9+; prefer "3 accounts stale" over per-item nags.
+- **Escalate on state change, not duration.** Aging→stale is a moment worth
+  a strip; "still stale" is not worth re-alerting. One surface per concern —
+  a warning may live on the dashboard OR as a badge, not both.
+- **Quiet by default.** New attention surfaces require a coordinator ruling;
+  the default answer to "should this get a badge?" is no. Informational
+  status belongs inline where the object lives (e.g. freshness on the
+  account row), not in global chrome.
+
 Empty states are designed (illustrated hint + primary action), never blank.
 Loading uses skeletons, never spinners on full pages. Every interactive element
 has hover/focus-visible/active states. Keyboard navigable throughout.

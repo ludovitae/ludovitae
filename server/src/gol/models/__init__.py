@@ -45,6 +45,12 @@ MEMBER_ROLES = ("self", "partner", "child", "other")
 # (coordinator ruling 2026-07-11; docs/API.md household section).
 ADULT_ROLES = ("self", "partner", "other")
 SPENDING_KINDS = ("essential", "discretionary")
+# v1.2 import freshness: transactional/investment types default to tracked;
+# property/vehicle/loan-ish types default to off (docs/API.md freshness).
+TRACK_FRESHNESS_TYPES = ("checking", "savings", "credit_card", "brokerage", "retirement", "hsa")
+CATEGORY_SOURCES = ("manual", "rule", "heuristic", "ai", "none")
+RULE_MATCHES = ("contains", "exact")
+RULE_FIELDS = ("payee",)
 
 
 def utcnow() -> dt.datetime:
@@ -110,6 +116,12 @@ class Account(Base):
     include_in_net_worth: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.date] = mapped_column(Date, default=dt.date.today)
+    # v1.2 import freshness (docs/API.md): last_import_at is set on every
+    # import commit; staleness_days is a per-account threshold override
+    # (null -> default 35); track_freshness defaults by account type.
+    last_import_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    staleness_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    track_freshness: Mapped[bool] = mapped_column(Boolean, default=False)
 
     balances: Mapped[list[BalanceSnapshot]] = relationship(
         back_populates="account", cascade="all, delete-orphan", order_by="BalanceSnapshot.date"
@@ -182,6 +194,71 @@ class Transaction(Base):
     payee: Mapped[str] = mapped_column(String(300), default="")
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     dedupe_hash: Mapped[str] = mapped_column(String(64))
+    # v1.2: both legs of a paired transfer share one id (the smaller of the
+    # two transaction ids — deterministic and stable across re-imports).
+    transfer_pair_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    category_source: Mapped[str] = mapped_column(String(16), default="none")
+
+
+class CategoryRule(Base):
+    """User categorization rule (v1.2). Applied on import and via
+    POST /rules/apply — priority asc, first match wins; never overwrites a
+    manual (or ai) category."""
+
+    __tablename__ = "category_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pattern: Mapped[str] = mapped_column(String(300))
+    match: Mapped[str] = mapped_column(String(16), default="contains")
+    field: Mapped[str] = mapped_column(String(16), default="payee")
+    category: Mapped[str] = mapped_column(String(100))
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+
+
+class AiSettings(Base):
+    """Singleton row for the AI admin panel (v1.2). The API key lives only in
+    this local, chmod-0600 database; it is NEVER logged and NEVER returned by
+    the API (masked last4 only)."""
+
+    __tablename__ = "ai_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    api_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    monthly_budget_usd: Mapped[float] = mapped_column(Float, default=5.0)
+
+
+class AiUsage(Base):
+    """Ledger of AI spend (v1.2) — one row per (future) API call. Costs are
+    floats, not Money: token costs are fractions of a cent."""
+
+    __tablename__ = "ai_usage"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    month: Mapped[str] = mapped_column(String(7), index=True)  # "YYYY-MM"
+    purpose: Mapped[str] = mapped_column(String(50))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    est_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class TransferPairTombstone(Base):
+    """A user-unpaired transaction pair (coordinator ruling 2026-07-11):
+    auto-pairing must never re-link these two transactions. Manual
+    POST /transfers/pair on the same two ids clears the tombstone.
+    Always stored with txn_id_a < txn_id_b."""
+
+    __tablename__ = "transfer_pair_tombstones"
+    __table_args__ = (UniqueConstraint("txn_id_a", "txn_id_b", name="uq_tombstone_pair"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    txn_id_a: Mapped[int] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), index=True
+    )
+    txn_id_b: Mapped[int] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), index=True
+    )
 
 
 class Scenario(Base):

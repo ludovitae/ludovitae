@@ -25,6 +25,10 @@ Model summary (coarse by design, see ARCHITECTURE.md):
   coarse effective tax on the (fixed) retirement-account share — unchanged
   from v1 so migrated plans simulate identically.
 - Income is taxed at the effective rate. Taxes are a coarse knob, not brackets.
+- Social security: at most ``SS_TAXABLE_SHARE`` (85%) of the benefit is
+  taxable (engine v2, T-011), so SS take-home is ``ss * (1 - 0.85 * tax)``.
+  The provisional-income phase-in is deliberately NOT modeled (bracket
+  workstream); 85% is the honest ceiling, not a precise model.
 """
 
 from __future__ import annotations
@@ -42,6 +46,9 @@ from gol.sim.types import (
 )
 
 PERCENTILES = (10, 25, 50, 75, 90)
+
+# At most this share of a social security benefit is taxable (IRS ceiling).
+SS_TAXABLE_SHARE = 0.85
 
 
 def _flow_array(spec: FlowSpec, n_months: int) -> np.ndarray:
@@ -172,6 +179,7 @@ def _run_paths(
 
     tax = inputs.effective_tax_rate_pct / 100.0
     wtax = tax * inputs.retirement_share  # coarse tax on retirement-share withdrawals
+    ss_net = 1.0 - SS_TAXABLE_SHARE * tax  # only 85% of SS is taxable (engine v2)
     prop_f = (1.0 + inputs.property_growth_pct / 100.0) ** (1.0 / 12.0)
     debt_f = (1.0 + inputs.debt_growth_pct / 100.0) ** (1.0 / 12.0)
 
@@ -210,7 +218,7 @@ def _run_paths(
 
     for t in range(n):  # months; all ops below are vectorized over paths
         p = price[:, t]
-        cash = cash + (income_fixed[t] + ss_base[t] * p) * (1.0 - tax)
+        cash = cash + income_fixed[t] * (1.0 - tax) + ss_base[t] * p * ss_net
         cash = cash - expense_fixed[t] - ret_spend_base[t] * p + one_time[t]
 
         cash = cash - contrib_inv[t]

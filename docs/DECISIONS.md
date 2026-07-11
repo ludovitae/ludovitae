@@ -1,5 +1,45 @@
 # Decision log (ADRs, newest first)
 
+## 2026-07-11 — PM nemesis review accepted (owner rulings)
+
+Review: docs/reviews/2026-07-11-pm-nemesis.md. Owner rulings:
+1. **Flow-CRUD hold reversed** (supersedes the transactions-first hold, not
+   the philosophy): a minimal flow form ships in v1.2a — cold start needs
+   income entered once; v1.3 inference calibrates against it.
+2. **Resequencing accepted**: v1.2a (first real baseline: flow form, real
+   institution exports vs importers, real-browser QA) then v1.2b (durability:
+   pre-migration auto-backup, scheduled snapshots, export endpoint) before
+   any v1.3 work. v1.2 analytics merges as built.
+3. **Tax**: honesty pass now (taxable SS capped at 85%, chart assumptions
+   strip, success probability to nearest 5%, in-app "what moved" notes) AND
+   a bracket-aware tax workstream starts in parallel (standalone gol/tax
+   module first; engine integration after the honesty pass lands). RSU
+   withholding-gap dollars stay gated on brackets.
+4. Game theme frozen as-is; no further AI-stub investment until a key exists.
+
+## 2026-07-11 — Product principle: decision support, never decision making
+
+Owner ruling, standing for all future features: the app must never make (or
+appear to make) financial decisions for the owner — it surfaces options,
+trade-offs, and dollar-quantified comparisons; the human decides. First
+application: future sell-side optimization (see board) may highlight, on vest
+day, that selling long-held company lots (LTCG) instead of freshly vested
+shares (ordinary/STCG) could save $X — presented as a comparison, never a
+recommendation queue, never an action button that executes anything. Wording
+in UI should be "you could…" framing with assumptions shown, not "you should".
+
+## 2026-07-11 — Transactions-first data philosophy (owner)
+
+The ongoing data feed is frequent CSV/OFX transaction dumps plus occasional
+balance snapshots — NOT hand-maintained flows. Consequences:
+1. Flow-CRUD UI stays on hold; flows are slow-moving assumptions (set rarely),
+   while transactions carry reality (salary changes, bonuses, RSU vests, ESPP).
+2. Future direction (v1.3): income inference from transaction inflows —
+   the mirror of v1.2's spending detectors — surfacing observed vs assumed
+   income and flagging drift. Settings may carry informational "hints"
+   (e.g. base salary) as calibration anchors, never as sim inputs.
+3. Import UX priority rises: freshness warnings (v1.2) are load-bearing.
+
 ## 2026-07-11 — v1.2: real spending, credit cards, freshness, AI budget
 
 1. **Credit cards without double-entry pain** (owner-approved): spending

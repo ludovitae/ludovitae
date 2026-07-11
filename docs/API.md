@@ -185,8 +185,24 @@ accounts within ±4 days auto-pair silently; near-misses become candidates.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/transfers/candidates` | `[{score, txns: [Transaction, Transaction]}]`, score 0–1 |
-| POST | `/transfers/pair` | `{transaction_ids: [a, b]}` → both legs updated |
-| DELETE | `/transfers/pair/{pair_id}` | unlink |
+| POST | `/transfers/pair` | `{transaction_ids: [a, b]}` → **200** with both updated legs `[Transaction, Transaction]` (link op, not resource creation) |
+| DELETE | `/transfers/pair/{pair_id}` | unlink **and tombstone**: that transaction pair is never auto-paired again (manual re-pair via POST still allowed and clears the tombstone). Ruling 2026-07-11. |
+
+`POST /transactions/categorize` returns `{"updated": n}`.
+`/categorize/suggest` includes unmatched payees with `"category": null`.
+`/spending/recurring` entries also carry `"amount_variability_pct"` (stddev/median of
+occurrence amounts × 100) so the UI can segment true subscriptions (low
+variability) from spending habits like groceries (rulings 2026-07-11).
+
+Further rulings (2026-07-11, from T-008 flags):
+`POST /transfers/candidates/dismiss` `{transaction_ids: [a, b]}` → 204 —
+persists a dismissal tombstone (same mechanism as unpair tombstones) so the
+candidate never resurfaces; manual pairing of the two txns still allowed.
+`GET /transactions?uncategorized=1` excludes transfer-paired rows.
+`api_key_last4` is `null` when no key is set. `by_purpose` entries are
+`{input_tokens, output_tokens, est_cost_usd}`. `possibly_forgotten` is capped
+at `monthly_equivalent ≤ 100` (subscription-scale heuristic — a mortgage is
+recurring but not forgettable).
 
 Category rules (applied on import, priority asc, first match wins):
 
@@ -321,7 +337,16 @@ v1.1: top-level `retirement_age` is sugar for the `self` member's override
 
 ```json
 {
-  "engine_version": "1", "n_paths": 1000, "seed": 42,
+  "engine_version": "2",
+  "engine_notes": ["Taxable Social Security capped at 85% (was 100%)"],
+  "assumptions": {
+    "market": {"stocks_mean_pct": 7.0, "stocks_vol_pct": 15.0,
+               "bonds_mean_pct": 3.5, "bonds_vol_pct": 7.0,
+               "cash_mean_pct": 1.5, "cash_vol_pct": 0.5},
+    "inflation_pct": 2.5, "effective_tax_rate_pct": 18.0,
+    "ss_taxable_share": 0.85, "engine_version": "2"
+  },
+  "n_paths": 1000, "seed": 42,
   "start_year": 2026, "ages": [46, 47, ...],
   "deterministic": {"net_worth": [...], "invested": [...], "cash": [...],
                      "property": [...], "debt": [...]},
@@ -342,6 +367,13 @@ v1.1: top-level `retirement_age` is sugar for the `self` member's override
 
 Arrays are annual (one value per age, year-end). Synchronous; target < 1.5s at
 1000 paths.
+
+v1.1.1 (engine v2, T-011a): `engine_notes` lists human-readable behavior
+changes since the prior engine version; `assumptions` reflects the resolved
+PlanInputs the run actually used (scenario overrides included), never
+re-read from the DB; the sim result cache is keyed by engine version. A
+future `assumptions.tax_model` field ("flat" | "brackets") is reserved for
+the T-012 phase-2 integration.
 
 v1.1: `ages` is the `self` member's age axis. `milestones` (sorted by age)
 carries every member's retirement / SS-claim / RMD-start events under the

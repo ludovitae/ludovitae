@@ -40,24 +40,29 @@ def create_app() -> FastAPI:
 
     from gol.api import (
         accounts,
+        ai_admin,
         dashboard,
         flows,
         goals,
         household,
         importer,
         profile,
+        rules,
         scenarios,
         settings,
         simulate,
         spending,
+        spending_analytics,
         transactions,
+        transfers,
     )
 
     prefix = "/api/v1"
     app.include_router(auth_router, prefix=prefix)
     for module in (
-        profile, household, spending, accounts, flows, goals, transactions,
-        scenarios, simulate, dashboard, settings, importer,
+        profile, household, spending, spending_analytics, accounts, flows,
+        goals, transactions, transfers, rules, scenarios, simulate, dashboard,
+        settings, ai_admin, importer,
     ):
         app.include_router(module.router, prefix=prefix)
 
