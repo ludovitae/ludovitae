@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from gol.api.common import Db, get_or_404, iso, parse_date
 from gol.auth.deps import Authenticated
 from gol.errors import ApiError
-from gol.models import FLOW_KINDS, Account, Flow
+from gol.models import FLOW_KINDS, Account, Flow, HouseholdMember
 
 router = APIRouter(tags=["flows"])
 
@@ -22,6 +22,7 @@ class FlowCreate(BaseModel):
     end_date: str | None = None
     account_id: int | None = None
     category: str | None = None
+    member_id: int | None = None
     ends_at_retirement: bool = False
 
 
@@ -34,6 +35,7 @@ class FlowPatch(BaseModel):
     end_date: str | None = None
     account_id: int | None = None
     category: str | None = None
+    member_id: int | None = None
     ends_at_retirement: bool | None = None
 
 
@@ -48,11 +50,12 @@ def _serialize(flow: Flow) -> dict:
         "end_date": iso(flow.end_date),
         "account_id": flow.account_id,
         "category": flow.category,
+        "member_id": flow.member_id,
         "ends_at_retirement": flow.ends_at_retirement,
     }
 
 
-def _validate(db, kind: str, account_id: int | None) -> None:
+def _validate(db, kind: str, account_id: int | None, member_id: int | None) -> None:
     if kind not in FLOW_KINDS:
         raise ApiError(422, "validation_error", f"kind must be one of {', '.join(FLOW_KINDS)}")
     if kind == "contribution" and account_id is None:
@@ -61,6 +64,8 @@ def _validate(db, kind: str, account_id: int | None) -> None:
         )
     if account_id is not None:
         get_or_404(db, Account, account_id, "account_not_found")
+    if member_id is not None:
+        get_or_404(db, HouseholdMember, member_id, "member_not_found")
 
 
 @router.get("/flows")
@@ -70,7 +75,7 @@ def list_flows(db: Db, _: Authenticated):
 
 @router.post("/flows", status_code=201)
 def create_flow(body: FlowCreate, db: Db, _: Authenticated):
-    _validate(db, body.kind, body.account_id)
+    _validate(db, body.kind, body.account_id, body.member_id)
     flow = Flow(
         name=body.name,
         kind=body.kind,
@@ -80,6 +85,7 @@ def create_flow(body: FlowCreate, db: Db, _: Authenticated):
         end_date=parse_date(body.end_date, "end_date") if body.end_date else None,
         account_id=body.account_id,
         category=body.category,
+        member_id=body.member_id,
         ends_at_retirement=body.ends_at_retirement,
     )
     db.add(flow)
@@ -96,7 +102,8 @@ def patch_flow(flow_id: int, body: FlowPatch, db: Db, _: Authenticated):
             data[field] = parse_date(data[field], field)
     kind = data.get("kind", flow.kind)
     account_id = data.get("account_id", flow.account_id)
-    _validate(db, kind, account_id)
+    member_id = data.get("member_id", flow.member_id)
+    _validate(db, kind, account_id, member_id)
     for key, value in data.items():
         setattr(flow, key, value)
     db.flush()

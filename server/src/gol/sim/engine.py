@@ -1,25 +1,37 @@
 """Monthly-resolution projection engine: deterministic path + Monte Carlo.
 
 Vectorized over paths — arrays are shaped (n_paths, n_months); the only Python
-loop is over months (state recurrence), never over paths.
+loops are over months (state recurrence) and over household members (tiny),
+never over paths.
 
 Model summary (coarse by design, see ARCHITECTURE.md):
-- Four buckets: cash, invested, property, debt.
+- Buckets: cash, invested (with per-member tax-deferred sub-buckets), property,
+  debt.
 - Lognormal monthly returns per asset class; invested bucket is a monthly
-  rebalanced mix of stocks/bonds/cash weights.
+  rebalanced mix of stocks/bonds/cash weights. Tax-deferred sub-buckets grow
+  with the same blended factor and shrink pro-rata on shortfall withdrawals.
 - Inflation is AR(1) around the assumed mean; a per-path price index inflates
   retirement spending and social security.
-- Retirement transition: flagged income and all baseline expense flows stop;
-  spending switches to annual_retirement_spending (inflated); shortfalls are
-  withdrawn from cash first, then from invested grossed up by a coarse
-  effective tax on the retirement-account share.
-- Income is taxed at the effective rate. Taxes are a v1 knob, not brackets.
+- Per-member timing (v1.1): income/contribution stops are pre-resolved into
+  flow windows by assembly; each member's social security starts at their
+  claim month (actuarially adjusted amount) and stops at their life end; RMDs
+  force an annual distribution (balance / Uniform Lifetime Table divisor) from
+  the member's tax-deferred bucket from their RMD start month to their life
+  end, taxed at the effective rate, remainder to cash.
+- Household retirement transition: baseline expenses stop (via flow windows)
+  and spending switches to annual_retirement_spending (inflated) at the LAST
+  retirement.
+- Shortfalls are withdrawn from cash first, then from invested grossed up by a
+  coarse effective tax on the (fixed) retirement-account share — unchanged
+  from v1 so migrated plans simulate identically.
+- Income is taxed at the effective rate. Taxes are a coarse knob, not brackets.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from gol.sim.tables import SS_CLAIM_FACTORS, rmd_divisor
 from gol.sim.types import (
     CONTRIB_DEBT,
     CONTRIB_INVESTED,
@@ -32,12 +44,10 @@ from gol.sim.types import (
 PERCENTILES = (10, 25, 50, 75, 90)
 
 
-def _flow_array(spec: FlowSpec, n_months: int, retirement_month: int) -> np.ndarray:
+def _flow_array(spec: FlowSpec, n_months: int) -> np.ndarray:
     """Monthly amounts for one flow: growth applied annually-compounded."""
     out = np.zeros(n_months)
     end = n_months if spec.end_month is None else min(spec.end_month, n_months)
-    if spec.stops_at_retirement:
-        end = min(end, retirement_month)
     start = max(spec.start_month, 0)
     if start >= end:
         return out
@@ -48,10 +58,15 @@ def _flow_array(spec: FlowSpec, n_months: int, retirement_month: int) -> np.ndar
 
 
 def _build_flow_arrays(inputs: PlanInputs) -> dict[str, np.ndarray]:
-    n, ret = inputs.n_months, inputs.retirement_month
+    n = inputs.n_months
     arrays = {k: np.zeros(n) for k in (INCOME, EXPENSE, CONTRIB_INVESTED, CONTRIB_DEBT)}
+    td_contrib = np.zeros((len(inputs.members), n))
     for spec in inputs.flows:
-        arrays[spec.kind] += _flow_array(spec, n, ret)
+        arr = _flow_array(spec, n)
+        arrays[spec.kind] += arr
+        if spec.kind == CONTRIB_INVESTED and spec.td_member is not None:
+            td_contrib[spec.td_member] += arr
+    arrays["td_contrib"] = td_contrib
 
     one_time = np.zeros(n)
     for ev in inputs.one_time_events:
@@ -60,14 +75,39 @@ def _build_flow_arrays(inputs: PlanInputs) -> dict[str, np.ndarray]:
     arrays["one_time"] = one_time
 
     ret_spend = np.zeros(n)
-    ret_spend[ret:] = inputs.annual_retirement_spending / 12.0
+    ret_spend[max(0, min(inputs.retirement_month, n)):] = (
+        inputs.annual_retirement_spending / 12.0
+    )
     arrays["ret_spend_base"] = ret_spend
 
+    # Social security: per member, from claim month to their life end.
     ss = np.zeros(n)
-    ss_month = max(0, min((inputs.ss_start_age - inputs.start_age) * 12, n))
-    ss[ss_month:] = inputs.social_security_monthly
+    for m in inputs.members:
+        if m.ss_monthly <= 0 or m.ss_start_month is None:
+            continue
+        start = max(0, min(m.ss_start_month, n))
+        end = max(0, min(m.life_end_month, n))
+        ss[start:end] += m.ss_monthly
     arrays["ss_base"] = ss
     return arrays
+
+
+def _rmd_schedule(inputs: PlanInputs) -> dict[int, list[tuple[int, float]]]:
+    """month -> [(member_index, ULT divisor)]. Annual, on the plan-year grid
+    (member ages are birth-year based, so age ticks align with plan years);
+    RMDs run from the member's RMD start month to their life end."""
+    by_month: dict[int, list[tuple[int, float]]] = {}
+    for idx, m in enumerate(inputs.members):
+        if m.rmd_start_month is None:
+            continue
+        start = m.rmd_start_month
+        while start < 0:
+            start += 12  # already past RMD age: distributions continue annually
+        end = min(inputs.n_months, max(0, m.life_end_month))
+        for t in range(start, end, 12):
+            age = (m.age0_months + t) // 12
+            by_month.setdefault(t, []).append((idx, rmd_divisor(age)))
+    return by_month
 
 
 def _monthly_lognormal_factors(
@@ -107,7 +147,7 @@ def _inflation_price_index(
 
 def _run_paths(
     inputs: PlanInputs, n_paths: int, rng: np.random.Generator | None
-) -> dict[str, np.ndarray]:
+) -> dict[str, np.ndarray | dict]:
     """Core monthly recurrence. rng=None → deterministic expected path."""
     n = inputs.n_months
     shape = (n_paths, n)
@@ -140,6 +180,24 @@ def _run_paths(
     prop = np.full(n_paths, float(inputs.property0))
     debt = np.full(n_paths, float(inputs.debt0))
 
+    # Per-member tax-deferred sub-buckets of `invested` (RMD accounting only:
+    # they never move money by themselves, so plans without RMD activity
+    # reproduce v1 outputs exactly).
+    n_members = len(inputs.members)
+    td = np.zeros((n_members, n_paths))
+    for i, member in enumerate(inputs.members):
+        td[i] = float(member.tax_deferred0)
+    td_contrib = flows["td_contrib"]
+    rmd_at = _rmd_schedule(inputs)
+    # Track sub-buckets only when they can ever be non-zero (perf).
+    track_td = n_members > 0 and (td.any() or td_contrib.any())
+    # First scheduled RMD month per member (for the milestone balance check).
+    rmd_first: dict[int, int] = {}
+    for t, items in rmd_at.items():
+        for idx, _ in items:
+            rmd_first[idx] = min(rmd_first.get(idx, t), t)
+    td_at_rmd_start: dict[int, np.ndarray] = {}
+
     out = {k: np.empty(shape) for k in ("net_worth", "cash", "invested", "property", "debt")}
 
     income_fixed = flows[INCOME]
@@ -157,18 +215,40 @@ def _run_paths(
 
         cash = cash - contrib_inv[t]
         invested = invested + contrib_inv[t]
+        if track_td:
+            for i in range(n_members):
+                if td_contrib[i, t]:
+                    td[i] += td_contrib[i, t]
         pay = np.minimum(contrib_debt[t], debt)
         cash = cash - pay
         debt = debt - pay
+
+        # Forced RMDs: annual distribution from the member's tax-deferred
+        # bucket, taxed at the effective rate, remainder to cash.
+        if track_td and t in rmd_at:
+            for i, divisor in rmd_at[t]:
+                if rmd_first.get(i) == t:
+                    td_at_rmd_start[i] = td[i].copy()
+                dist = td[i] / divisor
+                td[i] = td[i] - dist
+                invested = invested - dist
+                cash = cash + dist * (1.0 - tax)
 
         # Cover negative cash from invested, grossing up for withdrawal tax.
         shortfall = np.maximum(-cash, 0.0)
         gross = shortfall / (1.0 - wtax)
         w = np.minimum(gross, np.maximum(invested, 0.0))
+        inv_before = invested
         invested = invested - w
         cash = cash + w * (1.0 - wtax)
+        if track_td:
+            # Withdrawals shrink tax-deferred sub-buckets pro-rata.
+            denom = np.where(inv_before > 0.0, inv_before, 1.0)
+            td = td * np.where(inv_before > 0.0, 1.0 - w / denom, 1.0)
 
         invested = invested * f_invested[:, t]
+        if track_td:
+            td = td * f_invested[:, t]
         cash = np.where(cash > 0, cash * f_cash[:, t], cash)
         prop = prop * prop_f
         debt = debt * debt_f
@@ -179,7 +259,46 @@ def _run_paths(
         out["debt"][:, t] = debt
         out["net_worth"][:, t] = cash + invested + prop - debt
 
+    out["td_at_rmd_start"] = td_at_rmd_start
     return out
+
+
+def _ss_label(name: str, claim_age: int | None) -> str:
+    if claim_age in SS_CLAIM_FACTORS:
+        return f"{name} claims Social Security ({SS_CLAIM_FACTORS[claim_age] * 100:g}% of FRA)"
+    return f"{name} claims Social Security"
+
+
+def _milestones(inputs: PlanInputs, det_td_at_rmd_start: dict[int, np.ndarray]) -> list[dict]:
+    """Every member's retirement / SS-claim / RMD-start events within the
+    horizon, on the self member's age axis (docs/API.md v1.1). Events already
+    in the past (negative month) or beyond the horizon are omitted; RMD start
+    is only a milestone when there is a balance to distribute."""
+    n = inputs.n_months
+    events: list[tuple[int, int, dict]] = []
+    for idx, m in enumerate(inputs.members):
+        member_events: list[tuple[int, str, str]] = []
+        if m.retirement_month is not None and 0 <= m.retirement_month < n:
+            member_events.append((m.retirement_month, "retirement", f"{m.name} retires"))
+        if m.ss_monthly > 0 and m.ss_start_month is not None and 0 <= m.ss_start_month < n:
+            member_events.append(
+                (m.ss_start_month, "ss_start", _ss_label(m.name, m.ss_claim_age))
+            )
+        if (
+            m.rmd_start_month is not None
+            and 0 <= m.rmd_start_month < min(n, m.life_end_month)
+            and float(det_td_at_rmd_start.get(idx, np.zeros(1))[0]) > 0.005
+        ):
+            member_events.append((m.rmd_start_month, "rmd_start", f"RMDs begin for {m.name}"))
+        for month, kind, label in member_events:
+            events.append(
+                (month, m.id,
+                 {"age": inputs.start_age + month // 12,
+                  "year": inputs.start_year + month // 12,
+                  "kind": kind, "label": label, "member_id": m.id})
+            )
+    events.sort(key=lambda e: (e[0], e[1]))
+    return [e[2] for e in events]
 
 
 def _annual(arr: np.ndarray, n_years: int) -> np.ndarray:
@@ -201,6 +320,7 @@ def run_simulation(inputs: PlanInputs, n_paths: int = 1000, seed: int = 0) -> di
         "property": _annual(det["property"], n_years)[0].round(2).tolist(),
         "debt": _annual(det["debt"], n_years)[0].round(2).tolist(),
     }
+    milestones = _milestones(inputs, det["td_at_rmd_start"])
 
     rng = np.random.default_rng(seed)
     mc = _run_paths(inputs, n_paths, rng)
@@ -236,4 +356,5 @@ def run_simulation(inputs: PlanInputs, n_paths: int = 1000, seed: int = 0) -> di
             "p50": round(float(ending[1]), 2),
             "p90": round(float(ending[2]), 2),
         },
+        "milestones": milestones,
     }

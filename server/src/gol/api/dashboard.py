@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from gol.api.common import Db, iso
 from gol.auth.deps import Authenticated
-from gol.models import LIABILITY_TYPES, Account, Flow, Goal
+from gol.models import LIABILITY_TYPES, Account, Flow, Goal, SpendingCategory
 
 router = APIRouter(tags=["dashboard"])
 
@@ -62,6 +62,10 @@ def dashboard(db: Db, _: Authenticated):
             surplus += flow.amount_monthly
         elif flow.kind == "expense":
             surplus -= flow.amount_monthly
+    # spending categories are outflows too (ruling 2026-07-11; the UI shows
+    # the combined total so flow/category double entry stays visible)
+    for cat in db.execute(select(SpendingCategory)).scalars():
+        surplus -= cat.monthly_amount
 
     goals = db.execute(select(Goal).order_by(Goal.priority, Goal.id)).scalars().all()
     goals_summary = [

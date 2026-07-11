@@ -43,18 +43,20 @@ def create_app() -> FastAPI:
         dashboard,
         flows,
         goals,
+        household,
         importer,
         profile,
         scenarios,
         settings,
         simulate,
+        spending,
         transactions,
     )
 
     prefix = "/api/v1"
     app.include_router(auth_router, prefix=prefix)
     for module in (
-        profile, accounts, flows, goals, transactions,
+        profile, household, spending, accounts, flows, goals, transactions,
         scenarios, simulate, dashboard, settings, importer,
     ):
         app.include_router(module.router, prefix=prefix)

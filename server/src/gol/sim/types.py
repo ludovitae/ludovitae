@@ -1,4 +1,12 @@
-"""Input dataclasses for the simulation engine (pure, ORM-free)."""
+"""Input dataclasses for the simulation engine (pure, ORM-free).
+
+v1.1: person-level timing lives on ``MemberSpec`` entries. All month fields
+are offsets from plan month 0 on the self member's grid; they may be negative
+(the event already happened) or beyond the horizon (it never happens in-plan).
+The engine clamps for array work and omits out-of-range milestones. The
+assembly layer resolves retirement stops into each flow's ``end_month``, so
+flow windows are explicit here.
+"""
 
 from __future__ import annotations
 
@@ -25,13 +33,39 @@ class MarketParams:
 
 
 @dataclass(frozen=True)
+class MemberSpec:
+    """One household member on the plan's month grid.
+
+    ``ss_monthly`` is the already-actuarially-adjusted benefit (today's
+    dollars); ``ss_claim_age`` is carried only for the milestone label.
+    ``tax_deferred0`` is the member's starting retirement-account balance —
+    a sub-bucket of the household ``invested0``. ``life_end_month`` is
+    exclusive: the month after the member's last plan year.
+    """
+
+    id: int
+    name: str
+    age0_months: int  # age at plan start, in months (birth-year granularity)
+    life_end_month: int
+    retirement_month: int | None = None
+    ss_monthly: float = 0.0
+    ss_start_month: int | None = None
+    ss_claim_age: int | None = None
+    tax_deferred0: float = 0.0
+    rmd_start_month: int | None = None
+
+
+@dataclass(frozen=True)
 class FlowSpec:
     """A recurring monthly flow on the plan's month grid.
 
     ``start_month`` inclusive, ``end_month`` exclusive (None = plan end).
-    ``stops_at_retirement``: clipped to the retirement month (income flows with
-    ends_at_retirement, and all baseline expense flows — spending switches to
-    the retirement budget at that point).
+    Retirement stops are pre-resolved into ``end_month`` by the assembly
+    layer (owner's retirement for owned income/contributions, the household
+    transition for expenses and unowned income).
+
+    ``td_member``: index into ``PlanInputs.members`` whose tax-deferred
+    sub-bucket a ``contrib_invested`` flow lands in (None = taxable).
     """
 
     kind: str  # income | expense | contrib_invested | contrib_debt
@@ -39,7 +73,7 @@ class FlowSpec:
     annual_growth_pct: float = 0.0
     start_month: int = 0
     end_month: int | None = None
-    stops_at_retirement: bool = False
+    td_member: int | None = None
 
 
 @dataclass(frozen=True)
@@ -50,10 +84,14 @@ class OneTimeEvent:
 
 @dataclass(frozen=True)
 class PlanInputs:
-    start_age: int
-    retirement_age: int
-    life_expectancy: int
+    start_age: int  # the self member's age at plan start (output age axis)
     start_year: int
+    horizon_months: int  # multiple of 12; runs to the latest life expectancy
+    # Household spending transition month (last retirement), clamped to
+    # [0, horizon_months]; == horizon_months when nobody retires in-plan.
+    retirement_month: int
+
+    members: tuple[MemberSpec, ...] = ()
 
     cash0: float = 0.0
     invested0: float = 0.0
@@ -62,8 +100,10 @@ class PlanInputs:
 
     # (stocks, bonds, cash) weights inside the invested bucket; sum to 1.
     invested_weights: tuple[float, float, float] = (0.6, 0.4, 0.0)
-    # Fraction of invested held in retirement-type accounts (drives the coarse
-    # effective tax applied to withdrawals).
+    # Fraction of invested held in retirement-type accounts. Drives the coarse
+    # effective tax applied to shortfall withdrawals — kept fixed (v1
+    # semantics) so migrated v1 plans simulate identically; RMDs model the
+    # forced-distribution reality on top.
     retirement_share: float = 0.0
 
     property_growth_pct: float = 0.0
@@ -73,24 +113,18 @@ class PlanInputs:
     one_time_events: tuple[OneTimeEvent, ...] = ()
 
     annual_retirement_spending: float = 0.0
-    social_security_monthly: float = 0.0
-    ss_start_age: int = 67
     inflation_mean_pct: float = 2.5
     effective_tax_rate_pct: float = 18.0
 
     market: MarketParams = field(default_factory=MarketParams)
 
     @property
-    def n_years(self) -> int:
-        return self.life_expectancy - self.start_age + 1
-
-    @property
     def n_months(self) -> int:
-        return self.n_years * 12
+        return self.horizon_months
 
     @property
-    def retirement_month(self) -> int:
-        return max(0, min((self.retirement_age - self.start_age) * 12, self.n_months))
+    def n_years(self) -> int:
+        return self.horizon_months // 12
 
     def to_dict(self) -> dict:
         return asdict(self)

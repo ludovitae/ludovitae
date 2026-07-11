@@ -1,6 +1,23 @@
 """Pure simulation engine: dataclasses + numpy only. No ORM imports here."""
 
 from gol.sim.engine import run_simulation
-from gol.sim.types import FlowSpec, MarketParams, OneTimeEvent, PlanInputs
+from gol.sim.tables import SS_CLAIM_FACTORS, rmd_divisor, rmd_start_age
+from gol.sim.types import (
+    FlowSpec,
+    MarketParams,
+    MemberSpec,
+    OneTimeEvent,
+    PlanInputs,
+)
 
-__all__ = ["FlowSpec", "MarketParams", "OneTimeEvent", "PlanInputs", "run_simulation"]
+__all__ = [
+    "SS_CLAIM_FACTORS",
+    "FlowSpec",
+    "MarketParams",
+    "MemberSpec",
+    "OneTimeEvent",
+    "PlanInputs",
+    "rmd_divisor",
+    "rmd_start_age",
+    "run_simulation",
+]
