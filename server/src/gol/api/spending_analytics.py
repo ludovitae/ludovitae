@@ -31,11 +31,14 @@ from gol.analytics.recurring import (
 from gol.api.common import Db, iso, parse_date
 from gol.auth.deps import Authenticated
 from gol.errors import ApiError
-from gol.models import Transaction
+from gol.models import INVESTMENT_ACTIVITY_CATEGORY, Transaction
 
 router = APIRouter(tags=["spending-analytics"])
 
 TRANSFER_CATEGORY = "transfer"  # v1.1 fallback exclusion (see module docstring)
+# #26: investment-activity rows (auto-set for investment-type accounts) are
+# not spending — excluded alongside the transfer fallback.
+_EXCLUDED_CATEGORIES = (TRANSFER_CATEGORY, INVESTMENT_ACTIVITY_CATEGORY)
 
 # Tunables where the contract gives qualitative guidance; documented in the
 # task log for the coordinator/QA:
@@ -77,7 +80,10 @@ def _spending_rows(
     if to is not None:
         query = query.where(Transaction.date <= to)
     rows = db.execute(query).scalars().all()
-    return [t for t in rows if (t.category or "").strip().lower() != TRANSFER_CATEGORY]
+    return [
+        t for t in rows
+        if (t.category or "").strip().lower() not in _EXCLUDED_CATEGORIES
+    ]
 
 
 def _category_key(txn: Transaction) -> str:

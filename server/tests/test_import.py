@@ -121,6 +121,8 @@ def test_ofx_preview_shape(authed, account):
     assert resp.status_code == 200
     assert resp.json() == {
         "accounts_found": ["9876543210"], "transaction_count": 2, "balance": 10412.88,
+        # #26: matched by hashed ACCTID; nothing linked yet -> null id
+        "account_match": {"account_id": None, "acctid_masked": "···3210"},
     }
 
 
@@ -130,12 +132,12 @@ def test_csv_commit_parses_messy_values_and_dedupes(authed, account):
     first = authed.post(
         "/api/v1/import/commit", files={"file": ("t.csv", CSV_DATA, "text/csv")}, data=data
     ).json()
-    assert first == {"imported": 3, "skipped_duplicates": 0}
+    assert first == {"imported": 3, "skipped_duplicates": 0, "skipped_pending": 0}
 
     again = authed.post(
         "/api/v1/import/commit", files={"file": ("t.csv", CSV_DATA, "text/csv")}, data=data
     ).json()
-    assert again == {"imported": 0, "skipped_duplicates": 3}
+    assert again == {"imported": 0, "skipped_duplicates": 3, "skipped_pending": 0}
 
     rows = authed.get(f"/api/v1/transactions?account_id={account['id']}").json()
     assert len(rows) == 3
@@ -149,7 +151,7 @@ def test_ofx_commit_updates_balance(authed, account):
         files={"file": ("t.ofx", OFX_V1_SGML, "application/x-ofx")},
         data={"kind": "ofx", "account_id": str(account["id"]), "update_balance": "true"},
     )
-    assert resp.json() == {"imported": 2, "skipped_duplicates": 0}
+    assert resp.json() == {"imported": 2, "skipped_duplicates": 0, "skipped_pending": 0}
     balances = authed.get(f"/api/v1/accounts/{account['id']}/balances").json()
     assert {"date": "2026-02-01", "amount": 10412.88} in balances
 

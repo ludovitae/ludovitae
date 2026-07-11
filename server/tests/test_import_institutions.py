@@ -94,7 +94,8 @@ def test_institution_fixture_full_flow(authed, name):
     # --- preview: columns parse, suggested mapping covers date + an amount ---
     pv = _upload(authed, "preview", data, account["id"]).json()
     assert set(pv) == {"columns", "sample_rows", "suggested_mapping",
-                       "matched_preset", "sign_hint"}
+                       "matched_preset", "sign_hint", "account_groups",
+                       "pending_rows"}
     assert pv["matched_preset"] is None
     suggested = pv["suggested_mapping"]
     assert "date" in suggested
@@ -116,7 +117,7 @@ def test_institution_fixture_full_flow(authed, name):
         flip_signs=str(case["flip_signs"]).lower(),
         save_preset=f"Preset {name}",
     ).json()
-    assert result == {"imported": case["imported"], "skipped_duplicates": 0}
+    assert result == {"imported": case["imported"], "skipped_duplicates": 0, "skipped_pending": 0}
 
     rows = authed.get(f"/api/v1/transactions?account_id={account['id']}").json()
     assert len(rows) == case["imported"]
@@ -130,7 +131,8 @@ def test_institution_fixture_full_flow(authed, name):
         authed, "commit", data, account["id"], mapping=json.dumps(case["mapping"]),
         flip_signs=str(case["flip_signs"]).lower(),
     ).json()
-    assert again == {"imported": 0, "skipped_duplicates": case["imported"]}
+    assert again == {"imported": 0, "skipped_duplicates": case["imported"],
+                     "skipped_pending": 0}
 
     # --- preview now matches the saved preset (fingerprint round-trip) ---
     pv2 = _upload(authed, "preview", data, account["id"]).json()

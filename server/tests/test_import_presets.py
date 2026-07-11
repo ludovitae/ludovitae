@@ -8,6 +8,17 @@ import hashlib
 import pytest
 
 from gol.importers import csv as csv_importer
+from gol.importers.builtin_presets import BUILTIN_PRESETS
+
+BUILTIN_NAMES = {spec["name"] for spec in BUILTIN_PRESETS}
+
+
+def _user_presets(authed) -> list[dict]:
+    """Presets minus the built-ins shipped by migration 0007 (#26)."""
+    return [
+        p for p in authed.get("/api/v1/import/presets").json()
+        if p["name"] not in BUILTIN_NAMES
+    ]
 
 CARD_CSV = (
     "Date,Description,Amount\n"
@@ -72,24 +83,30 @@ def test_header_fingerprint_is_sha256_of_lowered_sorted_headers():
 
 
 def test_presets_empty_then_saved_on_commit_then_deleted(authed, card):
-    assert authed.get("/api/v1/import/presets").json() == []
+    # #26: a fresh DB ships the built-in institution presets, nothing else
+    initial = authed.get("/api/v1/import/presets").json()
+    assert {p["name"] for p in initial} == BUILTIN_NAMES
+    assert _user_presets(authed) == []
 
     mapping = '{"date": "Date", "amount": "Amount", "payee": "Description"}'
     _commit(authed, card, CARD_CSV, mapping, flip_signs="true", save_preset="My Card")
 
-    presets = authed.get("/api/v1/import/presets").json()
+    presets = _user_presets(authed)
     assert len(presets) == 1
     p = presets[0]
-    assert set(p) == {"id", "name", "header_fingerprint", "mapping", "flip_signs", "created_at"}
+    assert set(p) == {"id", "name", "header_fingerprint", "mapping", "flip_signs",
+                      "created_at", "last_account_id"}
     assert p["name"] == "My Card"
     assert p["flip_signs"] is True
     assert p["mapping"] == {"date": "Date", "amount": "Amount", "payee": "Description"}
     assert p["header_fingerprint"] == csv_importer.header_fingerprint(
         ["Date", "Description", "Amount"]
     )
+    # #26: the saving commit's target account becomes the picker default
+    assert p["last_account_id"] == card["id"]
 
     assert authed.delete(f"/api/v1/import/presets/{p['id']}").status_code == 204
-    assert authed.get("/api/v1/import/presets").json() == []
+    assert _user_presets(authed) == []
     assert authed.delete(f"/api/v1/import/presets/{p['id']}").status_code == 404
 
 
@@ -99,7 +116,7 @@ def test_save_preset_upserts_by_fingerprint(authed, card):
     mapping2 = '{"date": "Date", "amount": "Amount"}'
     _commit(authed, card, CARD_CSV, mapping2, flip_signs="true", save_preset="Renamed")
 
-    presets = authed.get("/api/v1/import/presets").json()
+    presets = _user_presets(authed)
     assert len(presets) == 1  # same header shape -> one preset
     assert presets[0]["name"] == "Renamed"
     assert presets[0]["flip_signs"] is True
@@ -110,7 +127,7 @@ def test_commit_without_save_preset_saves_nothing(authed, card):
     mapping = '{"date": "Date", "amount": "Amount", "payee": "Description"}'
     _commit(authed, card, CARD_CSV, mapping)
     _commit(authed, card, CARD_CSV, mapping, save_preset="   ")  # blank name: no save
-    assert authed.get("/api/v1/import/presets").json() == []
+    assert _user_presets(authed) == []
 
 
 def test_preview_matches_preset_by_fingerprint(authed, card, checking):
@@ -119,10 +136,11 @@ def test_preview_matches_preset_by_fingerprint(authed, card, checking):
 
     pv = _preview(authed, card, CARD_CSV)
     mp = pv["matched_preset"]
-    assert set(mp) == {"id", "name", "mapping", "flip_signs"}
+    assert set(mp) == {"id", "name", "mapping", "flip_signs", "last_account_id"}
     assert mp["name"] == "My Card"
     assert mp["flip_signs"] is True
     assert mp["mapping"]["amount"] == "Amount"
+    assert mp["last_account_id"] == card["id"]  # #26 picker default
 
     # a different header shape does not match
     pv2 = _preview(authed, checking, SPLIT_CSV)
@@ -160,7 +178,7 @@ def test_sign_hint_null_for_split_debit_credit(authed, card):
 def test_commit_flip_signs_negates_amounts(authed, card):
     mapping = '{"date": "Date", "amount": "Amount", "payee": "Description"}'
     result = _commit(authed, card, CARD_CSV, mapping, flip_signs="true")
-    assert result == {"imported": 6, "skipped_duplicates": 0}
+    assert result == {"imported": 6, "skipped_duplicates": 0, "skipped_pending": 0}
     rows = authed.get(f"/api/v1/transactions?account_id={card['id']}").json()
     amounts = sorted(r["amount"] for r in rows)
     assert amounts == [-84.12, -51.40, -17.99, -12.00, -4.50, 100.00]
@@ -186,7 +204,7 @@ def test_single_debit_slash_credit_column_stays_amount():
 def test_commit_with_split_mapping_signs_amounts(authed, checking):
     mapping = '{"date": "Date", "debit": "Debit", "credit": "Credit", "payee": "Description"}'
     result = _commit(authed, checking, SPLIT_CSV, mapping)
-    assert result == {"imported": 3, "skipped_duplicates": 0}
+    assert result == {"imported": 3, "skipped_duplicates": 0, "skipped_pending": 0}
     rows = authed.get(f"/api/v1/transactions?account_id={checking['id']}").json()
     by_payee = {r["payee"]: r["amount"] for r in rows}
     assert by_payee == {"PAYROLL": 4900.00, "MORTGAGE": -2350.00, "GROCERIES": -96.40}
@@ -222,7 +240,7 @@ def test_trailing_summary_rows_are_skipped(authed, checking):
     )
     mapping = '{"date": "Date", "amount": "Amount", "payee": "Description"}'
     result = _commit(authed, checking, data, mapping)
-    assert result == {"imported": 2, "skipped_duplicates": 0}
+    assert result == {"imported": 2, "skipped_duplicates": 0, "skipped_pending": 0}
 
 
 def test_trailing_row_with_valid_date_and_bad_amount_fails_closed(authed, checking):

@@ -2,9 +2,11 @@
 manual > rules > heuristics > ai. Rules apply priority asc (then id asc),
 first match wins; matching is case-insensitive on the transaction payee.
 
-File-supplied categories (a user-mapped CSV category column) are recorded as
-category_source="manual": the user chose that mapping deliberately, and rules
-must never clobber manual data.
+Ruling change (#26, 2026-07-11): file-supplied categories (a mapped CSV
+category column) are merchant-derived (e.g. Amex's), not a deliberate user
+choice — they import as category_source="heuristic" and user rules beat them
+both at import time and retroactively. Bulk categorize remains the only
+"manual" source. No backfill: affects new imports only.
 """
 
 from __future__ import annotations
@@ -45,13 +47,17 @@ def first_matching_rule(rules: list[CategoryRule], payee: str) -> CategoryRule |
 def categorize_new_transaction(
     txn: Transaction, rules: list[CategoryRule], account_type: str, file_category: str | None
 ) -> None:
-    """Set category + category_source on a freshly imported transaction."""
-    if file_category is not None:
-        txn.category, txn.category_source = file_category, "manual"
-        return
+    """Set category + category_source on a freshly imported transaction.
+
+    Import-time order (#26 ruling): user rules > file-supplied (heuristic
+    grade) > payee heuristics.
+    """
     rule = first_matching_rule(rules, txn.payee)
     if rule is not None:
         txn.category, txn.category_source = rule.category, "rule"
+        return
+    if file_category is not None:
+        txn.category, txn.category_source = file_category, "heuristic"
         return
     hit = heuristic_categorize(txn.payee, account_type)
     if hit is not None:

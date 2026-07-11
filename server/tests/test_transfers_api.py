@@ -83,8 +83,8 @@ def test_reimport_is_fully_idempotent(authed, accounts):
 
     again_chk = _import_csv(authed, checking["id"], chk_rows)
     again_card = _import_csv(authed, card["id"], card_rows)
-    assert again_chk == {"imported": 0, "skipped_duplicates": 1}
-    assert again_card == {"imported": 0, "skipped_duplicates": 1}
+    assert again_chk == {"imported": 0, "skipped_duplicates": 1, "skipped_pending": 0}
+    assert again_card == {"imported": 0, "skipped_duplicates": 1, "skipped_pending": 0}
     after = sorted(
         (t["id"], t["transfer_pair_id"])
         for t in _txns(authed, checking["id"]) + _txns(authed, card["id"])
@@ -140,8 +140,8 @@ def test_unpair_tombstone_survives_reimport(authed, accounts):
 
     again_chk = _import_csv(authed, checking["id"], chk_rows)
     again_card = _import_csv(authed, card["id"], card_rows)
-    assert again_chk == {"imported": 0, "skipped_duplicates": 1}
-    assert again_card == {"imported": 0, "skipped_duplicates": 1}
+    assert again_chk == {"imported": 0, "skipped_duplicates": 1, "skipped_pending": 0}
+    assert again_card == {"imported": 0, "skipped_duplicates": 1, "skipped_pending": 0}
     for txn in _txns(authed, checking["id"]) + _txns(authed, card["id"]):
         assert txn["transfer_pair_id"] is None  # tombstone held
     # and it is not resurfaced for review either

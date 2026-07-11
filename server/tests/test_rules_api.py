@@ -61,17 +61,23 @@ def test_rules_crud_and_validation(authed):
     assert authed.get("/api/v1/rules").json() == []
 
 
-def test_import_layering_manual_then_rule_then_heuristic(authed, account):
+def test_import_layering_rule_then_file_then_heuristic(authed, account):
+    """#26 ruling change: user rules beat the file's category column at
+    import time; file-supplied categories import heuristic-grade (they are
+    merchant-derived, e.g. Amex's) — bulk categorize is the only manual."""
     authed.post("/api/v1/rules", json={"pattern": "basket", "category": "food"})
     d = _date()
     _import_csv(authed, account["id"], [
-        f"{d},-10.00,Green Basket,groceries",  # file category -> manual
+        f"{d},-10.00,Green Basket,groceries",  # rule beats file category
+        f"{d},-14.00,Corner Store,snacks",     # file category -> heuristic
         f"{d},-11.00,Basket Case,",            # rule match -> rule
         f"{d},-12.00,NETFLIX.COM,",            # heuristic keyword
         f"{d},-13.00,Mystery Shop,",           # nothing -> none
     ])
     a = _txn(authed, account["id"], "Green Basket")
-    assert (a["category"], a["category_source"]) == ("groceries", "manual")
+    assert (a["category"], a["category_source"]) == ("food", "rule")
+    s = _txn(authed, account["id"], "Corner Store")
+    assert (s["category"], s["category_source"]) == ("snacks", "heuristic")
     b = _txn(authed, account["id"], "Basket Case")
     assert (b["category"], b["category_source"]) == ("food", "rule")
     c = _txn(authed, account["id"], "NETFLIX.COM")
@@ -104,16 +110,23 @@ def test_exact_match_rule(authed, account):
 def test_rules_apply_retroactive_never_overwrites_manual(authed, account):
     d = _date()
     _import_csv(authed, account["id"], [
-        f"{d},-10.00,Corner Store,snacks",  # manual (file category)
+        f"{d},-10.00,Corner Store,snacks",  # file category -> heuristic (#26)
         f"{d},-11.00,Corner Kiosk,",        # uncategorized
         f"{d},-12.00,NETFLIX.COM,",         # heuristic -> subscriptions
     ])
+    # bulk categorize is the only manual source (#26 ruling) — protect Store
+    store_id = _txn(authed, account["id"], "Corner Store")["id"]
+    authed.post(
+        "/api/v1/transactions/categorize",
+        json={"ids": [store_id], "category": "snacks"},
+    )
     authed.post("/api/v1/rules", json={"pattern": "corner", "category": "convenience"})
     authed.post("/api/v1/rules", json={"pattern": "netflix", "category": "tv"})
 
     first = authed.post("/api/v1/rules/apply").json()
     assert first == {"recategorized": 2}  # kiosk (none) + netflix (heuristic)
-    assert _txn(authed, account["id"], "Corner Store")["category"] == "snacks"
+    store = _txn(authed, account["id"], "Corner Store")
+    assert (store["category"], store["category_source"]) == ("snacks", "manual")
     kiosk = _txn(authed, account["id"], "Corner Kiosk")
     assert (kiosk["category"], kiosk["category_source"]) == ("convenience", "rule")
     netflix = _txn(authed, account["id"], "NETFLIX.COM")
