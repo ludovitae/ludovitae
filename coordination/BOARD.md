@@ -12,7 +12,7 @@
 | T-008 | v1.2 frontend: spending hub, review queues, freshness badges, AI admin panel | frontend-dev agent | ws/spending-fe | review — accepted (128 tests); mock-reconciliation pass before merge |
 | T-009 | v1.2a first real baseline: flow form, importer presets/sign detection vs owner's real exports, browser QA | fe+be agents | ws/first-mile | hold — needs T-008 merge + owner exports in data/first-mile/ |
 | T-010 | v1.2b durability: pre-migration backup, scheduled snapshots, export endpoint | backend-dev agent | ws/durability | ready — T-007 merged |
-| T-011 | Model honesty: 85% SS cap + assumptions in API (011a); assumptions strip + 5% rounding in UI (011b) | be + fe agents | ws/honesty-be/-fe | 011a done — merged (engine v2); 011b hold — after T-008 |
+| T-011 | Model honesty: 85% SS cap + assumptions in API (011a); assumptions strip + 5% rounding in UI (011b) | be + fe agents | ws/honesty-be/-fe | 011a done — merged (engine v2); 011b review — on ws/honesty-fe (web 136→148 tests) |
 | T-012 | Bracket-aware tax phase 1: standalone gol/tax module + design doc | backend-dev agent | ws/tax-brackets | done — merged; phase 2 integration next |
 
 ## Backlog (unowned, actionable only — versioned plans live in docs/ROADMAP.md)
