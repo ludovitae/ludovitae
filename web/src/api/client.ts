@@ -6,7 +6,9 @@
 import type {
   Account,
   AccountCreate,
+  AccountMap,
   AccountPatch,
+  AdminResetResult,
   AiSettings,
   AiSettingsUpdate,
   AiUsageMonth,
@@ -30,6 +32,7 @@ import type {
   ImportCommitResult,
   ImportPreset,
   ImportPreview,
+  NewAccountPayload,
   ObservedSpending,
   Profile,
   Scenario,
@@ -250,17 +253,30 @@ export const api = {
   },
 
   import: {
-    preview: (file: File, kind: 'csv' | 'ofx', accountId: number) => {
+    /** #26: accountId is optional (the create-new flow has no account yet);
+     * mapping overrides the effective mapping for sign hint/account groups */
+    preview: (
+      file: File,
+      kind: 'csv' | 'ofx',
+      accountId?: number | null,
+      opts: { mapping?: Partial<CsvMapping> } = {},
+    ) => {
       const form = new FormData()
       form.set('file', file)
       form.set('kind', kind)
-      form.set('account_id', String(accountId))
+      if (accountId != null) form.set('account_id', String(accountId))
+      if (opts.mapping) form.set('mapping', JSON.stringify(opts.mapping))
       return request<ImportPreview>('POST', '/import/preview', { form })
     },
+    /* #26: target is account_id XOR new_account; multi-account CSVs route
+     * via accountMap instead. */
     commit: (
       file: File,
       kind: 'csv' | 'ofx',
-      accountId: number,
+      target:
+        | { accountId: number }
+        | { newAccount: NewAccountPayload }
+        | { accountMap: AccountMap },
       mapping: CsvMapping | null,
       updateBalance: boolean,
       /* v1.2.2 (T-009): sign flip + preset save (upsert by fingerprint) */
@@ -269,7 +285,9 @@ export const api = {
       const form = new FormData()
       form.set('file', file)
       form.set('kind', kind)
-      form.set('account_id', String(accountId))
+      if ('accountId' in target) form.set('account_id', String(target.accountId))
+      if ('newAccount' in target) form.set('new_account', JSON.stringify(target.newAccount))
+      if ('accountMap' in target) form.set('account_map', JSON.stringify(target.accountMap))
       if (mapping) form.set('mapping', JSON.stringify(mapping))
       form.set('update_balance', String(updateBalance))
       if (opts.flipSigns) form.set('flip_signs', 'true')
@@ -279,6 +297,12 @@ export const api = {
     /* v1.2.2 (T-009): institution mapping presets */
     presets: () => request<ImportPreset[]>('GET', '/import/presets'),
     removePreset: (id: number) => request<void>('DELETE', `/import/presets/${id}`),
+  },
+
+  /** #27: start from scratch. confirm must be exactly "reset ludovitae". */
+  admin: {
+    reset: (mode: 'demo' | 'empty', confirm: string) =>
+      request<AdminResetResult>('POST', '/admin/reset', { json: { mode, confirm } }),
   },
 
   scenarios: {

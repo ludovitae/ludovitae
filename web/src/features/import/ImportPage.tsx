@@ -1,27 +1,77 @@
 /** Import wizard: drag-drop → column mapping preview → dedupe report.
  * v1.2.2 (T-009): institution presets (auto-matched by header fingerprint),
- * sign-convention confirm step, split debit/credit mapping. */
+ * sign-convention confirm step, split debit/credit mapping.
+ * #26: create-unseen-accounts — OFX ACCTID auto-match, inline new-account
+ * mini-form, multi-account CSV routing (per-group match/create), preset
+ * last-account defaults, pending-row (status column) reporting. */
 
 import { useCallback, useMemo, useState } from 'react'
 import { api } from '@/api/client'
 import { useAccounts } from '@/api/queries'
 import { qk } from '@/api/queries'
 import { useQueryClient } from '@tanstack/react-query'
-import type { CsvMapping, ImportCommitResult, ImportPreview, ImportPreviewCsv } from '@/api/types'
-import { LIABILITY_TYPES } from '@/api/types'
+import type {
+  Account,
+  AccountGroup,
+  AccountMap,
+  AccountType,
+  CsvMapping,
+  ImportCommitResult,
+  ImportPreview,
+  ImportPreviewCsv,
+  ImportPreviewOfx,
+  NewAccountPayload,
+} from '@/api/types'
+import { ACCOUNT_TYPES, LIABILITY_TYPES } from '@/api/types'
 import { Button } from '@/components/Button'
 import { Card, CardHeader } from '@/components/Card'
-import { EmptyState } from '@/components/EmptyState'
 import { Field, Select, TextInput, Toggle } from '@/components/Field'
 import { Skeleton } from '@/components/Skeleton'
 import { IconCheck, IconUpload, IconWarning, IconX } from '@/components/icons'
 import { formatMoney } from '@/lib/format'
 import { PageHeader } from '@/layout/AppShell'
 
+const NEW_ACCOUNT = 'new'
+
+type PickTarget = { kind: 'existing'; id: number } | { kind: 'new' }
+
 type Step =
   | { at: 'pick' }
-  | { at: 'preview'; file: File; kind: 'csv' | 'ofx'; accountId: number; preview: ImportPreview }
-  | { at: 'done'; result: ImportCommitResult; accountId: number }
+  | {
+      at: 'preview'
+      file: File
+      kind: 'csv' | 'ofx'
+      target: PickTarget
+      preview: ImportPreview
+      fileText: string
+    }
+  | { at: 'done'; result: ImportCommitResult; accountName: string }
+
+/** #26: guess a sensible account type from a provider account name. */
+export function guessAccountType(name: string | null | undefined): AccountType {
+  const n = (name ?? '').toLowerCase()
+  if (/401|403|ira|roth|retirement|pension/.test(n)) return 'retirement'
+  if (/hsa/.test(n)) return 'hsa'
+  if (/check|cash management/.test(n)) return 'checking'
+  if (/saving/.test(n)) return 'savings'
+  if (/card/.test(n)) return 'credit_card'
+  return 'brokerage'
+}
+
+/** #26: client-side OFX hints for the new-account mini-form (name from ORG,
+ * type from the message set / ACCTTYPE). */
+function ofxHints(text: string): { org: string | null; type: AccountType | null } {
+  const org = /<ORG>([^<\r\n]+)/i.exec(text)?.[1]?.trim() ?? null
+  let type: AccountType | null = null
+  if (/<CCACCTFROM>/i.test(text) || /<CREDITCARDMSGSRSV1>/i.test(text)) type = 'credit_card'
+  else if (/<ACCTTYPE>\s*SAVINGS/i.test(text)) type = 'savings'
+  else if (/<ACCTTYPE>\s*CHECKING/i.test(text)) type = 'checking'
+  return { org, type }
+}
+
+function typeLabel(t: AccountType): string {
+  return t.replaceAll('_', ' ')
+}
 
 export function ImportPage() {
   const { data: accounts, isPending } = useAccounts()
@@ -42,21 +92,6 @@ export function ImportPage() {
     )
   }
 
-  if ((accounts ?? []).length === 0) {
-    return (
-      <>
-        <PageHeader title="Import" />
-        <Card>
-          <EmptyState
-            illustration="file"
-            title="Add an account first"
-            hint="Transactions need somewhere to land. Create the account, then bring in its CSV or OFX export."
-          />
-        </Card>
-      </>
-    )
-  }
-
   return (
     <>
       <PageHeader title="Import" hint="Bank exports in, tidy transactions out — duplicates skipped" />
@@ -71,11 +106,11 @@ export function ImportPage() {
 
       {step.at === 'pick' ? (
         <PickStep
-          accounts={importable.map((a) => ({ id: a.id, name: a.name }))}
+          accounts={importable}
           onError={setError}
-          onPreview={(file, kind, accountId, preview) => {
+          onPreview={(next) => {
             setError(null)
-            setStep({ at: 'preview', file, kind, accountId, preview })
+            setStep(next)
           }}
         />
       ) : null}
@@ -83,21 +118,18 @@ export function ImportPage() {
       {step.at === 'preview' ? (
         <PreviewStep
           step={step}
+          accounts={importable}
           onBack={() => setStep({ at: 'pick' })}
           onError={setError}
-          onDone={(result) => {
+          onDone={(result, accountName) => {
             setError(null)
-            setStep({ at: 'done', result, accountId: step.accountId })
+            setStep({ at: 'done', result, accountName })
           }}
         />
       ) : null}
 
       {step.at === 'done' ? (
-        <DoneStep
-          result={step.result}
-          accountName={accounts?.find((a) => a.id === step.accountId)?.name ?? 'account'}
-          onRestart={() => setStep({ at: 'pick' })}
-        />
+        <DoneStep result={step.result} accountName={step.accountName} onRestart={() => setStep({ at: 'pick' })} />
       ) : null}
     </>
   )
@@ -136,28 +168,35 @@ function PickStep({
   onPreview,
   onError,
 }: {
-  accounts: { id: number; name: string }[]
-  onPreview: (file: File, kind: 'csv' | 'ofx', accountId: number, preview: ImportPreview) => void
+  accounts: Account[]
+  onPreview: (step: Extract<Step, { at: 'preview' }>) => void
   onError: (msg: string | null) => void
 }) {
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? 0)
+  // #26: with no accounts yet, the wizard starts on "create new" — imports
+  // work from a completely empty database
+  const [choice, setChoice] = useState<string>(accounts[0] ? String(accounts[0].id) : NEW_ACCOUNT)
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const handleFile = useCallback(
     async (file: File) => {
       const kind: 'csv' | 'ofx' = /\.(ofx|qfx)$/i.test(file.name) ? 'ofx' : 'csv'
+      const target: PickTarget =
+        choice === NEW_ACCOUNT ? { kind: 'new' } : { kind: 'existing', id: Number(choice) }
       setBusy(true)
       try {
-        const preview = await api.import.preview(file, kind, accountId)
-        onPreview(file, kind, accountId, preview)
+        const preview = await api.import.preview(
+          file, kind, target.kind === 'existing' ? target.id : null,
+        )
+        const fileText = kind === 'ofx' ? await file.text() : ''
+        onPreview({ at: 'preview', file, kind, target, preview, fileText })
       } catch (e) {
         onError(e instanceof Error ? e.message : 'Could not read that file.')
       } finally {
         setBusy(false)
       }
     },
-    [accountId, onPreview, onError],
+    [choice, onPreview, onError],
   )
 
   function useSample() {
@@ -180,14 +219,18 @@ function PickStep({
   return (
     <Card>
       <div className="flex flex-col gap-4 p-5">
-        <Field label="Into account">
+        <Field
+          label="Into account"
+          hint={choice === NEW_ACCOUNT ? 'You’ll name the new account after we read the file' : undefined}
+        >
           {(id) => (
-            <Select id={id} value={String(accountId)} onChange={(e) => setAccountId(Number(e.target.value))}>
+            <Select id={id} value={choice} onChange={(e) => setChoice(e.target.value)}>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
                 </option>
               ))}
+              <option value={NEW_ACCOUNT}>＋ Create new account…</option>
             </Select>
           )}
         </Field>
@@ -239,20 +282,36 @@ function PickStep({
 
 /* ------------------------------ step 2 ----------------------------------- */
 
+interface NewAccountDraft {
+  name: string
+  type: AccountType
+  institution: string
+}
+
+type GroupChoice = { kind: 'existing'; id: number } | { kind: 'new'; name: string; type: AccountType }
+
+function draftToPayload(d: NewAccountDraft): NewAccountPayload {
+  return { name: d.name.trim(), type: d.type, institution: d.institution.trim() || null }
+}
+
 function PreviewStep({
   step,
+  accounts,
   onBack,
   onDone,
   onError,
 }: {
   step: Extract<Step, { at: 'preview' }>
+  accounts: Account[]
   onBack: () => void
-  onDone: (result: ImportCommitResult) => void
+  onDone: (result: ImportCommitResult, accountName: string) => void
   onError: (msg: string | null) => void
 }) {
   const qc = useQueryClient()
   const isCsv = step.kind === 'csv'
-  const csv = isCsv ? (step.preview as ImportPreviewCsv) : null
+  const [preview, setPreview] = useState(step.preview)
+  const csv = isCsv ? (preview as ImportPreviewCsv) : null
+  const ofx = !isCsv ? (preview as ImportPreviewOfx) : null
   const preset = csv?.matched_preset ?? null
   const [usingPreset, setUsingPreset] = useState(preset !== null)
   const [mapping, setMapping] = useState<Partial<CsvMapping>>(
@@ -269,9 +328,58 @@ function PreviewStep({
   const [updateBalance, setUpdateBalance] = useState(false)
   const [busy, setBusy] = useState(false)
 
+  const multiGroups = csv?.account_groups ?? null
+  const multi = !!(multiGroups && mapping.account_id_column)
+
+  // --- single-target selection (#26): OFX match > preset default > step-1 pick
+  const hints = !isCsv ? ofxHints(step.fileText) : { org: null, type: null }
+  const matchedId = ofx?.account_match.account_id ?? null
+  const initialTarget = (): string => {
+    if (matchedId !== null) return String(matchedId)
+    if (isCsv && preset?.last_account_id != null) return String(preset.last_account_id)
+    if (step.target.kind === 'existing') return String(step.target.id)
+    return NEW_ACCOUNT
+  }
+  const [targetChoice, setTargetChoice] = useState<string>(initialTarget)
+  const [draft, setDraft] = useState<NewAccountDraft>(() => ({
+    name: hints.org ?? '',
+    type: hints.type ?? guessAccountType(hints.org),
+    institution: hints.org ?? '',
+  }))
+
+  // --- multi-account choices (#26): matched groups keep their account,
+  // unseen ones default to "create new" with a guessed type
+  const [groupChoices, setGroupChoices] = useState<Record<string, GroupChoice>>(() => {
+    const out: Record<string, GroupChoice> = {}
+    for (const g of multiGroups ?? []) {
+      out[g.key] =
+        g.account_id !== null
+          ? { kind: 'existing', id: g.account_id }
+          : { kind: 'new', name: g.name ?? g.number_masked, type: guessAccountType(g.name) }
+    }
+    return out
+  })
+
+  const targetAccountName =
+    targetChoice === NEW_ACCOUNT
+      ? draft.name.trim() || 'new account'
+      : (accounts.find((a) => a.id === Number(targetChoice))?.name ?? 'account')
+
   const mappingComplete =
     !isCsv ||
     (!!mapping.date && (splitColumns ? !!mapping.debit && !!mapping.credit : !!mapping.amount))
+
+  const newAccountReady =
+    multi ||
+    targetChoice !== NEW_ACCOUNT ||
+    draft.name.trim().length > 0
+
+  const groupsReady =
+    !multi ||
+    (multiGroups ?? []).every((g) => {
+      const c = groupChoices[g.key]
+      return c && (c.kind === 'existing' || c.name.trim().length > 0)
+    })
 
   function detachPreset() {
     setUsingPreset(false)
@@ -279,6 +387,7 @@ function PreviewStep({
     setMapping(suggested)
     setSplitColumns(!!(suggested.debit && suggested.credit))
     setFlipSigns(csv?.sign_hint?.looks_flipped ?? false)
+    void remap(suggested)
   }
 
   function toggleSplit(on: boolean) {
@@ -290,13 +399,52 @@ function PreviewStep({
     )
   }
 
+  /** #26: account/status column changes re-preview so groups/pending refresh. */
+  async function remap(next: Partial<CsvMapping>) {
+    if (!isCsv) return
+    try {
+      const accountId = step.target.kind === 'existing' ? step.target.id : null
+      const fresh = await api.import.preview(step.file, step.kind, accountId, { mapping: next })
+      setPreview(fresh)
+    } catch {
+      /* preview refresh is best-effort; commit still validates */
+    }
+  }
+
+  function setMappingField(field: keyof CsvMapping, value: string | undefined) {
+    const next = { ...mapping, [field]: value }
+    setMapping(next)
+    if (field === 'account_column' || field === 'account_id_column' || field === 'status_column') {
+      void remap(next)
+    }
+  }
+
   async function commit() {
     setBusy(true)
     try {
+      let target:
+        | { accountId: number }
+        | { newAccount: NewAccountPayload }
+        | { accountMap: AccountMap }
+      if (multi) {
+        const accountMap: AccountMap = {}
+        for (const g of multiGroups ?? []) {
+          const c = groupChoices[g.key]!
+          accountMap[g.key] =
+            c.kind === 'existing'
+              ? { account_id: c.id }
+              : { new_account: { name: c.name.trim(), type: c.type } }
+        }
+        target = { accountMap }
+      } else if (targetChoice === NEW_ACCOUNT) {
+        target = { newAccount: draftToPayload(draft) }
+      } else {
+        target = { accountId: Number(targetChoice) }
+      }
       const result = await api.import.commit(
         step.file,
         step.kind,
-        step.accountId,
+        target,
         isCsv ? (mapping as CsvMapping) : null,
         updateBalance,
         { flipSigns: isCsv && flipSigns, savePreset: isCsv ? presetName : undefined },
@@ -305,7 +453,7 @@ function PreviewStep({
       void qc.invalidateQueries({ queryKey: qk.accounts })
       void qc.invalidateQueries({ queryKey: qk.dashboard })
       void qc.invalidateQueries({ queryKey: qk.importPresets })
-      onDone(result)
+      onDone(result, multi ? 'multiple accounts' : targetAccountName)
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Import failed.')
     } finally {
@@ -313,9 +461,16 @@ function PreviewStep({
     }
   }
 
-  const mappedFields: readonly (keyof CsvMapping)[] = splitColumns
-    ? (['date', 'debit', 'credit', 'payee', 'category'] as const)
-    : (['date', 'amount', 'payee', 'category'] as const)
+  const hasAccountColumns = !!(mapping.account_column || mapping.account_id_column)
+  const hasStatusColumn = !!mapping.status_column || (csv?.pending_rows ?? null) !== null
+  const mappedFields: (keyof CsvMapping)[] = [
+    'date',
+    ...(splitColumns ? (['debit', 'credit'] as const) : (['amount'] as const)),
+    'payee',
+    'category',
+    ...(hasAccountColumns ? (['account_column', 'account_id_column'] as const) : []),
+    ...(hasStatusColumn ? (['status_column'] as const) : []),
+  ]
   const fieldLabels: Record<string, string> = {
     date: 'Date',
     amount: 'Amount',
@@ -323,6 +478,9 @@ function PreviewStep({
     credit: 'Credit (money in)',
     payee: 'Payee / description',
     category: 'Category',
+    account_column: 'Account name',
+    account_id_column: 'Account number',
+    status_column: 'Status',
   }
   const required = new Set(splitColumns ? ['date', 'debit', 'credit'] : ['date', 'amount'])
 
@@ -339,6 +497,23 @@ function PreviewStep({
             Don’t use the preset
           </Button>
         </div>
+      ) : null}
+
+      {ofx && ofx.account_match.acctid_masked ? (
+        matchedId !== null ? (
+          <div className="rounded-(--radius-s) border border-(--accent) bg-accent-soft px-3 py-2.5 text-[13px] text-ink">
+            <IconCheck width={14} height={14} className="mr-1.5 inline text-accent" />
+            Matched {ofx.account_match.acctid_masked} →{' '}
+            <span className="font-semibold">
+              {accounts.find((a) => a.id === matchedId)?.name ?? 'account'}
+            </span>
+          </div>
+        ) : (
+          <div className="rounded-(--radius-s) border border-edge bg-surface-2 px-3 py-2.5 text-[13px] text-ink-2">
+            Account {ofx.account_match.acctid_masked} isn’t linked yet — pick where these
+            transactions land below, or create a new account. We’ll remember it next time.
+          </div>
+        )
       ) : null}
 
       {csv ? (
@@ -360,7 +535,7 @@ function PreviewStep({
                   <Select
                     id={id}
                     value={mapping[field] ?? ''}
-                    onChange={(e) => setMapping({ ...mapping, [field]: e.target.value || undefined })}
+                    onChange={(e) => setMappingField(field, e.target.value || undefined)}
                   >
                     <option value="">{required.has(field) ? 'Choose…' : '— skip —'}</option>
                     {csv.columns.map((c) => (
@@ -381,7 +556,7 @@ function PreviewStep({
                     <th key={c} className="px-4 py-2 font-medium whitespace-nowrap">
                       {c}
                       {mappedFields.filter((f) => mapping[f] === c).map((f) => (
-                        <MapTag key={f} label={f} />
+                        <MapTag key={f} label={f.replace(/_column$/, '')} />
                       ))}
                     </th>
                   ))}
@@ -405,12 +580,19 @@ function PreviewStep({
         <Card>
           <CardHeader title="OFX file recognized" />
           <div className="flex flex-wrap gap-x-10 gap-y-3 px-5 pt-1 pb-5">
-            <OfxStat label="Accounts found" value={(step.preview as { accounts_found: string[] }).accounts_found.join(', ')} />
-            <OfxStat label="Transactions" value={String((step.preview as { transaction_count: number }).transaction_count)} />
-            <OfxStat label="Statement balance" value={formatMoney((step.preview as { balance: number }).balance)} />
+            <OfxStat label="Accounts found" value={ofx!.accounts_found.length ? ofx!.accounts_found.map((a) => `···${a.slice(-4)}`).join(', ') : '—'} />
+            <OfxStat label="Transactions" value={String(ofx!.transaction_count)} />
+            <OfxStat label="Statement balance" value={formatMoney(ofx!.balance)} />
           </div>
         </Card>
       )}
+
+      {csv && (csv.pending_rows ?? 0) > 0 ? (
+        <p className="rounded-(--radius-s) border border-edge bg-surface-2 px-3 py-2 text-[12px] text-ink-2">
+          {csv.pending_rows} pending transaction{csv.pending_rows === 1 ? '' : 's'} will be
+          skipped — they’ll import once they post.
+        </p>
+      ) : null}
 
       {csv && csv.sign_hint && !splitColumns ? (
         <div className="flex gap-2.5 rounded-(--radius-s) border border-(--warning) bg-warning/10 px-3 py-2.5">
@@ -432,8 +614,89 @@ function PreviewStep({
         </div>
       ) : null}
 
+      {multi ? (
+        <Card>
+          <CardHeader
+            title="Accounts in this file"
+            hint="Each account number maps to one of your accounts — unseen ones become new accounts"
+          />
+          <ul className="flex flex-col divide-y divide-(--border) px-5 pb-4">
+            {(multiGroups ?? []).map((g) => (
+              <GroupRow
+                key={g.key}
+                group={g}
+                accounts={accounts}
+                choice={groupChoices[g.key]!}
+                onChange={(c) => setGroupChoices({ ...groupChoices, [g.key]: c })}
+              />
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
       <Card>
         <div className="flex flex-col gap-3 px-5 py-4">
+          {!multi ? (
+            <div className="flex flex-wrap items-start gap-4">
+              <Field label="Into account">
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={targetChoice}
+                    onChange={(e) => setTargetChoice(e.target.value)}
+                    className="w-56"
+                  >
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                    <option value={NEW_ACCOUNT}>＋ Create new account…</option>
+                  </Select>
+                )}
+              </Field>
+              {targetChoice === NEW_ACCOUNT ? (
+                <div className="flex flex-wrap items-start gap-3 rounded-(--radius-s) border border-edge bg-surface-2 p-3">
+                  <Field label="New account name">
+                    {(id) => (
+                      <TextInput
+                        id={id}
+                        value={draft.name}
+                        placeholder="e.g. Vanguard Brokerage"
+                        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                        className="w-52"
+                      />
+                    )}
+                  </Field>
+                  <Field label="Type">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        value={draft.type}
+                        onChange={(e) => setDraft({ ...draft, type: e.target.value as AccountType })}
+                      >
+                        {ACCOUNT_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {typeLabel(t)}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </Field>
+                  <Field label="Institution (optional)">
+                    {(id) => (
+                      <TextInput
+                        id={id}
+                        value={draft.institution}
+                        onChange={(e) => setDraft({ ...draft, institution: e.target.value })}
+                        className="w-44"
+                      />
+                    )}
+                  </Field>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-end justify-between gap-3">
             {csv ? (
               <Field
@@ -462,13 +725,86 @@ function PreviewStep({
             <Button variant="ghost" onClick={onBack}>
               <IconX width={14} height={14} /> Start over
             </Button>
-            <Button variant="primary" onClick={() => void commit()} disabled={!mappingComplete || busy}>
+            <Button
+              variant="primary"
+              onClick={() => void commit()}
+              disabled={!mappingComplete || !newAccountReady || !groupsReady || busy}
+            >
               {busy ? 'Importing…' : 'Import transactions'}
             </Button>
           </div>
         </div>
       </Card>
     </div>
+  )
+}
+
+/** #26 multi-account row: matched account or create-new mini-form. */
+function GroupRow({
+  group,
+  accounts,
+  choice,
+  onChange,
+}: {
+  group: AccountGroup
+  accounts: Account[]
+  choice: GroupChoice
+  onChange: (c: GroupChoice) => void
+}) {
+  const value = choice.kind === 'existing' ? String(choice.id) : NEW_ACCOUNT
+  return (
+    <li className="flex flex-wrap items-center gap-3 py-3">
+      <div className="min-w-44">
+        <p className="text-[13px] font-medium text-ink">{group.name ?? group.number_masked}</p>
+        <p className="num text-[11px] text-ink-3">
+          {group.number_masked} · {group.rows} row{group.rows === 1 ? '' : 's'}
+          {group.account_id !== null ? (
+            <span className="ml-1.5 text-positive">matched</span>
+          ) : null}
+        </p>
+      </div>
+      <Select
+        aria-label={`Account for ${group.name ?? group.number_masked}`}
+        value={value}
+        onChange={(e) =>
+          onChange(
+            e.target.value === NEW_ACCOUNT
+              ? { kind: 'new', name: group.name ?? group.number_masked, type: guessAccountType(group.name) }
+              : { kind: 'existing', id: Number(e.target.value) },
+          )
+        }
+        className="w-52"
+      >
+        {accounts.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name}
+          </option>
+        ))}
+        <option value={NEW_ACCOUNT}>＋ Create new account…</option>
+      </Select>
+      {choice.kind === 'new' ? (
+        <>
+          <TextInput
+            aria-label={`New account name for ${group.number_masked}`}
+            value={choice.name}
+            onChange={(e) => onChange({ ...choice, name: e.target.value })}
+            className="w-48"
+          />
+          <Select
+            aria-label={`New account type for ${group.number_masked}`}
+            value={choice.type}
+            onChange={(e) => onChange({ ...choice, type: e.target.value as AccountType })}
+            className="w-36"
+          >
+            {ACCOUNT_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {typeLabel(t)}
+              </option>
+            ))}
+          </Select>
+        </>
+      ) : null}
+    </li>
   )
 }
 
@@ -500,6 +836,8 @@ function DoneStep({
   accountName: string
   onRestart: () => void
 }) {
+  const created = result.account
+  const target = created ? created.name : accountName
   return (
     <Card>
       <div className="flex flex-col items-center gap-4 px-6 py-12 text-center">
@@ -508,14 +846,43 @@ function DoneStep({
         </span>
         <div>
           <p className="text-base font-semibold text-ink">
-            {result.imported} transaction{result.imported === 1 ? '' : 's'} imported into {accountName}
+            {result.imported} transaction{result.imported === 1 ? '' : 's'} imported into {target}
           </p>
+          {created ? (
+            <p className="mt-1 text-[13px] text-ink-2">
+              New account <span className="font-medium">{created.name}</span> created and linked —
+              future files for it match automatically.
+            </p>
+          ) : null}
           <p className="mt-1 text-[13px] text-ink-3">
             {result.skipped_duplicates > 0
               ? `${result.skipped_duplicates} duplicate${result.skipped_duplicates === 1 ? '' : 's'} recognized and skipped — import the same file twice and nothing doubles.`
               : 'No duplicates found.'}
+            {result.skipped_pending > 0
+              ? ` ${result.skipped_pending} pending transaction${result.skipped_pending === 1 ? '' : 's'} skipped until they post.`
+              : ''}
           </p>
         </div>
+        {result.accounts ? (
+          <ul className="w-full max-w-sm divide-y divide-(--border) rounded-(--radius-s) border border-edge text-left">
+            {result.accounts.map((a) => (
+              <li key={a.account_id} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
+                <span className="font-medium text-ink">
+                  {a.name}
+                  {a.created ? (
+                    <span className="ml-1.5 rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                      new
+                    </span>
+                  ) : null}
+                </span>
+                <span className="num text-ink-2">
+                  {a.imported} imported
+                  {a.skipped_duplicates > 0 ? ` · ${a.skipped_duplicates} dupes` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <div className="flex gap-2">
           <Button variant="primary" onClick={onRestart}>
             Import another file

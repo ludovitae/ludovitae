@@ -333,7 +333,10 @@ export interface AiUsageMonth {
 }
 
 /** v1.2.2 (T-009): either a single `amount` column OR split `debit`/`credit`
- * columns (debit = outflow → negative, credit = inflow → positive). */
+ * columns. #26 split-sign ruling: each side parses as an ABSOLUTE value and
+ * direction comes from the column role (debit → outflow, credit → inflow).
+ * #26 adds account_column/account_id_column (multi-account routing) and
+ * status_column (Pending rows are skipped). */
 export interface CsvMapping {
   date: string
   amount?: string
@@ -341,6 +344,9 @@ export interface CsvMapping {
   credit?: string
   payee?: string
   category?: string
+  account_column?: string
+  account_id_column?: string
+  status_column?: string
 }
 
 /** v1.2.2 (T-009): saved column mapping per institution, keyed by the CSV
@@ -352,6 +358,9 @@ export interface ImportPreset {
   mapping: Partial<CsvMapping>
   flip_signs: boolean
   created_at: string
+  /** #26: the wizard's picker default — last single-target commit's account;
+   * null when never set or the account no longer exists */
+  last_account_id: number | null
 }
 
 /** The preset subset preview returns on a fingerprint match. */
@@ -360,6 +369,7 @@ export interface MatchedPreset {
   name: string
   mapping: Partial<CsvMapping>
   flip_signs: boolean
+  last_account_id: number | null
 }
 
 /** v1.2.2 (T-009): sign-convention heuristic — liability account with >80%
@@ -367,6 +377,18 @@ export interface MatchedPreset {
 export interface SignHint {
   looks_flipped: boolean
   reason: string
+}
+
+/** #26: one entry per distinct account number in a multi-account CSV.
+ * `key` is the sha256 of the raw number — the handle account_map is keyed
+ * by; the raw number never round-trips through the API. */
+export interface AccountGroup {
+  key: string
+  number_masked: string
+  name: string | null
+  rows: number
+  /** matched by hashed external id; null when unseen */
+  account_id: number | null
 }
 
 export interface ImportPreviewCsv {
@@ -377,19 +399,65 @@ export interface ImportPreviewCsv {
   /* v1.2.2 (T-009) */
   matched_preset: MatchedPreset | null
   sign_hint: SignHint | null
+  /* #26 */
+  account_groups: AccountGroup[] | null
+  /** rows the mapped status column marks Pending; null without one */
+  pending_rows: number | null
+}
+
+/** #26: matched by hashed ACCTID; no ACCTID in the file → both null. */
+export interface OfxAccountMatch {
+  account_id: number | null
+  acctid_masked: string | null
 }
 
 export interface ImportPreviewOfx {
   accounts_found: string[]
   transaction_count: number
   balance: number
+  account_match: OfxAccountMatch
 }
 
 export type ImportPreview = ImportPreviewCsv | ImportPreviewOfx
 
+/** #26: commit-side account creation payload (alternative to account_id). */
+export interface NewAccountPayload {
+  name: string
+  type: AccountType
+  institution?: string | null
+  asset_class?: AssetClass | null
+  member_id?: number | null
+}
+
+/** #26 multi-account commit routing: keyed by AccountGroup.key. */
+export type AccountMap = Record<
+  string,
+  { account_id: number } | { new_account: NewAccountPayload }
+>
+
+export interface ImportAccountResult {
+  account_id: number
+  name: string
+  created: boolean
+  imported: number
+  skipped_duplicates: number
+}
+
 export interface ImportCommitResult {
   imported: number
   skipped_duplicates: number
+  /** #26 Citi ruling: rows skipped because their status was Pending */
+  skipped_pending: number
+  /** #26: present when the commit created the account (new_account) */
+  account?: Account
+  /** #26: present in multi-account mode — per-account results */
+  accounts?: ImportAccountResult[]
+}
+
+/** #27: POST /admin/reset */
+export interface AdminResetResult {
+  backup: string | null
+  mode: 'demo' | 'empty'
 }
 
 export type EventKind = 'one_time' | 'recurring_expense' | 'recurring_income'
