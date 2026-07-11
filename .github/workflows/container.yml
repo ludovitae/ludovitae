@@ -1,0 +1,51 @@
+name: Container
+
+# Builds the Containerfile and pushes to ghcr.io/ludovitae/ludovitae.
+# Releases push {version, latest}; manual runs push dev-<sha> for testing.
+# Auth is GITHUB_TOKEN with packages:write — no extra secrets.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            # Release tags are vX.Y.Z; image tags drop the leading v.
+            echo "tags=${GITHUB_REF_NAME#v} latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build image
+        id: build
+        uses: redhat-actions/buildah-build@v2.13
+        with:
+          image: ghcr.io/${{ github.repository }}
+          tags: ${{ steps.tags.outputs.tags }}
+          containerfiles: ./Containerfile
+          # Docker manifest format so HEALTHCHECK survives (OCI drops it).
+          oci: false
+
+      - name: Log in to ghcr.io
+        uses: redhat-actions/podman-login@v1.7
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image
+        uses: redhat-actions/push-to-registry@v2.8
+        with:
+          image: ${{ steps.build.outputs.image }}
+          tags: ${{ steps.build.outputs.tags }}
