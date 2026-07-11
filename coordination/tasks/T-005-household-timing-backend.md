@@ -1,6 +1,6 @@
 # T-005 — Household, spending profile & timing engine (backend)
 
-Owner: backend-dev agent · Branch: `ws/household-be` · Status: todo
+Owner: backend-dev agent · Branch: `ws/household-be` · Status: review
 
 ## Scope
 
@@ -46,3 +46,62 @@ and the engine changes in docs/ARCHITECTURE.md §Simulation engine item 4:
 
 - 2026-07-10 (coordinator): task created. Contract already updated in
   docs/API.md + ARCHITECTURE.md — do not diverge; flag concerns in this log.
+- 2026-07-11 (backend-dev): implementation complete on `ws/household-be`;
+  status → review. 159 server tests green (125 baseline preserved except the
+  intentional golden re-pin), ruff clean, server boots; seeded-household
+  1000-path sim (81-year horizon) ≈0.43s over HTTP. Decisions below.
+- 2026-07-11 (backend-dev): engine identity strategy — per-member
+  tax-deferred balances are SUB-BUCKETS of the single invested bucket; they
+  grow with the same blended factor, shrink pro-rata on shortfall
+  withdrawals, and move money only when RMDs fire. The shortfall-withdrawal
+  tax gross-up keeps v1's FIXED retirement_share knob. Retirement stops are
+  resolved into flow end_months by assembly. Net effect: v1-equivalent
+  households reproduce v1 outputs bit-for-bit (regression-tested end-to-end
+  through the 0001→0002 migration against a recorded v1 golden, and again at
+  engine level).
+- 2026-07-11 (backend-dev): migration back-computes ss_monthly_at_fra =
+  old_monthly / claim_factor (claim age = old social_security_start_age
+  clamped to 62–70) so the simulated benefit is preserved — exact at claim 67,
+  within a cent otherwise (Money stores cents). v1 allowed start ages outside
+  62–70; those get clamped (timing shifts) — unavoidable under the v1.1
+  contract. The starter "Everything else" category is seeded with amount 0 so
+  migrated simulations stay identical (assembly skips zero-amount categories).
+- 2026-07-11 (backend-dev): RMD semantics — annual, on the plan-year grid
+  (ages are birth-year based), from the member's RMD start (73/75 by birth
+  year, IRS Pub 590-B 2022+ ULT divisors shipped as data in gol/sim/tables.py,
+  clamped at the 120+ row) to the member's life end; survivor/inherited-IRA
+  rules out of scope. Unowned retirement accounts use the self member for RMD
+  timing (per contract). RMD milestone is emitted only when the deterministic
+  path has a positive balance at the start month.
+- 2026-07-11 (backend-dev): member SS streams stop at the member's life end;
+  user-entered income flows are NOT auto-clipped at their owner's death (flows
+  keep their explicit windows — documented limitation). ends_at_retirement on
+  owned CONTRIBUTIONS follows the flow's member (contract only specifies
+  income); tax-deferred contribution routing follows the ACCOUNT owner.
+  Owned income whose owner has no retirement_age falls back to the household
+  last-retirement stop, same as unowned.
+- 2026-07-11 (backend-dev): scenario semantics — explicit
+  member_overrides[self] wins over the top-level retirement_age sugar;
+  overrides for unknown/deleted member ids are ignored at simulate time
+  (scenarios may outlive members); spending_delta_pct scales baseline expense
+  flows + spending categories only (not scenario events, not the
+  monthly_savings_delta redirect, not annual_retirement_spending).
+- 2026-07-11 (backend-dev): /spending/observed — window is full calendar
+  months ending at the current month start; transfers excluded by category ==
+  "transfer" (case-insensitive, documented in gol/api/spending.py); inflows
+  (amount ≥ 0) excluded; by_category sorted by monthly_avg desc. PUT /spending
+  preserves ids for categories passed with an existing id, creates/deletes the
+  rest.
+- 2026-07-11 (backend-dev): golden movement — the golden household (born
+  1980, 60% of 600k tax-deferred + ongoing 401(k) contributions) now RMDs from
+  75: det ending net worth 4,499,929.33 → 4,237,007.25, ending p50
+  2,641,539.39 → 2,517,061.28, success 0.739 → 0.737; year-0 values unchanged.
+  engine_version stays "1" per the contract example; milestones are additive.
+- 2026-07-11 (backend-dev): CONTRACT CONCERN (implemented as written, flagging
+  for a ruling): "horizon runs to the latest life expectancy in the household"
+  includes child members — the seeded household (child Riley, le 92) simulates
+  to self age ~127 (81-year horizon; still 0.43s at 1000 paths, and charts
+  keep working). If unintended, suggest horizon = latest life expectancy among
+  role in {self, partner, other}, or a nullable child life_expectancy. Also:
+  error codes chosen where the contract is silent — 409 self_member_exists /
+  self_role_immutable, 403 self_member_undeletable, 404 member_not_found.
