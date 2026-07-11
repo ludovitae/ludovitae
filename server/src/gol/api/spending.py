@@ -18,8 +18,10 @@ from gol.models import SPENDING_KINDS, SpendingCategory, Transaction
 
 router = APIRouter(tags=["spending"])
 
-# Transactions with this category are treated as transfers between own
-# accounts (not real spending) and excluded from observed outflows.
+# v1.2: transfer-PAIRED transactions (transfer_pair_id set) are excluded from
+# all spending analytics, this endpoint included. The v1.1 category=="transfer"
+# heuristic below remains as a FALLBACK for one-sided transfers whose
+# counterpart account was never imported (T-007 log, 2026-07-11).
 TRANSFER_CATEGORY = "transfer"
 
 
@@ -115,8 +117,9 @@ def observed_spending(
     months: int = Query(default=12, ge=1, le=60),
 ):
     """Trailing-N-full-month averages of outflows (negative-amount
-    transactions), grouped by category. Transfers (category "transfer",
-    case-insensitive) are excluded; empty data yields zeros."""
+    transactions), grouped by category. Transfer pairs are excluded (v1.2),
+    plus the category=="transfer" fallback (case-insensitive); empty data
+    yields zeros."""
     to = _month_start(dt.date.today())
     from_ = _shift_months(to, -months)
     rows = db.execute(
@@ -124,6 +127,7 @@ def observed_spending(
         .where(Transaction.date >= from_)
         .where(Transaction.date < to)
         .where(Transaction.amount < 0)
+        .where(Transaction.transfer_pair_id.is_(None))
     ).all()
 
     totals: dict[str, float] = {}

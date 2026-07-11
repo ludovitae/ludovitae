@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from gol.api.accounts import account_freshness, newest_txn_dates
 from gol.api.common import Db, iso
 from gol.auth.deps import Authenticated
 from gol.models import LIABILITY_TYPES, Account, Flow, Goal, SpendingCategory
@@ -34,13 +35,23 @@ def _net_worth_history(accounts: list[Account]) -> list[dict]:
 
 @router.get("/dashboard")
 def dashboard(db: Db, _: Authenticated):
-    accounts = [
-        a
-        for a in db.execute(
-            select(Account).options(selectinload(Account.balances))
-        ).scalars()
-        if a.include_in_net_worth
-    ]
+    all_accounts = list(
+        db.execute(select(Account).options(selectinload(Account.balances))).scalars()
+    )
+    accounts = [a for a in all_accounts if a.include_in_net_worth]
+
+    # v1.2 freshness strip: aging + stale only, worst (oldest import) first.
+    # Considers every account, even ones excluded from net worth.
+    newest = newest_txn_dates(db)
+    stale_accounts = []
+    for acc in all_accounts:
+        freshness, days = account_freshness(acc, newest.get(acc.id))
+        if freshness in ("aging", "stale"):
+            stale_accounts.append({
+                "id": acc.id, "name": acc.name, "freshness": freshness,
+                "days_since_import": days,
+            })
+    stale_accounts.sort(key=lambda s: (-s["days_since_import"], s["id"]))
     assets = liabilities = 0.0
     by_type: dict[str, float] = {}
     for acc in accounts:
@@ -92,4 +103,5 @@ def dashboard(db: Db, _: Authenticated):
         "by_type": by_type,
         "goals_summary": goals_summary,
         "monthly_surplus": round(surplus, 2),
+        "stale_accounts": stale_accounts,
     }

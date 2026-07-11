@@ -8,10 +8,10 @@
 | T-004 | Security review: auth, CSRF, import parsing, headers, TLS | security agent | ws/security | done — report in docs/SECURITY-REVIEW-v1.md; all findings resolved |
 | T-005 | v1.1 backend: household members, spending profile, SS/RMD timing engine, milestones | backend-dev agent | ws/household-be | done — 162 tests, migration sim-identity exact, merged to main |
 | T-006 | v1.1 frontend: household & spending pages, milestone markers, timing controls | frontend-dev agent | ws/household-fe | done — web 62→97 tests, merged to main |
-| T-007 | v1.2 backend: transfers/credit-card model, rules+heuristic categorization, freshness, analytics, AI budget | backend-dev agent | ws/spending-be | review — 214 tests; applying pair-tombstone + variability rulings |
-| T-008 | v1.2 frontend: spending hub, review queues, freshness badges, AI admin panel | frontend-dev agent | ws/spending-fe | in-progress |
+| T-007 | v1.2 backend: transfers/credit-card model, rules+heuristic categorization, freshness, analytics, AI budget | backend-dev agent | ws/spending-be | done — merged (219 tests, tombstones + rulings applied) |
+| T-008 | v1.2 frontend: spending hub, review queues, freshness badges, AI admin panel | frontend-dev agent | ws/spending-fe | review — accepted (128 tests); mock-reconciliation pass before merge |
 | T-009 | v1.2a first real baseline: flow form, importer presets/sign detection vs owner's real exports, browser QA | fe+be agents | ws/first-mile | hold — needs T-008 merge + owner exports in data/first-mile/ |
-| T-010 | v1.2b durability: pre-migration backup, scheduled snapshots, export endpoint | backend-dev agent | ws/durability | hold — after T-007 merge |
+| T-010 | v1.2b durability: pre-migration backup, scheduled snapshots, export endpoint | backend-dev agent | ws/durability | ready — T-007 merged |
 | T-011 | Model honesty: 85% SS cap + assumptions in API (011a); assumptions strip + 5% rounding in UI (011b) | be + fe agents | ws/honesty-be/-fe | 011a done — merged (engine v2); 011b hold — after T-008 |
 | T-012 | Bracket-aware tax phase 1: standalone gol/tax module + design doc | backend-dev agent | ws/tax-brackets | done — merged; phase 2 integration next |
 
