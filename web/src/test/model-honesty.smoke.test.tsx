@@ -93,7 +93,7 @@ describe('what-moved engine note (T-011b)', () => {
     expect(note.textContent).toContain('v1 → v3')
     // engine_notes come from the response verbatim.
     expect(
-      screen.getByText('Taxable Social Security capped at 85% (was 100%)'),
+      screen.getByText(/Bracket-aware federal tax when the flat-rate override is unset/),
     ).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: 'Got it' }))
