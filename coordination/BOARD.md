@@ -39,7 +39,17 @@
   sell_at_vest: bool}; engine turns the schedule into dated one-time inflows;
   future vests visible on the chart like milestones. Note for later: flat
   supplemental withholding (22%) often under-withholds vs actual marginal —
-  surface the gap, don't hide it.
+  surface the gap, don't hide it. Grant entity gets a `kind` from day one
+  (rsu now; espp/options later) — owner wants it general.
+- vFuture candidate — **sell-side optimization (advisory only)**, owner ask
+  2026-07-11: owner holds other company-stock lots eligible for LTCG; on vest
+  day the app could highlight that selling long-held lots instead of freshly
+  vested shares changes the tax outcome by $X. Requires tax-lot modeling
+  (acquisition date, cost basis, holding period) and LTCG/STCG distinction —
+  a step beyond the coarse effective rate, likely rides the v2 tax-aware
+  work. HARD CONSTRAINT per DECISIONS product principle: comparisons and
+  "you could…" framing only; the app never recommends-by-default and never
+  executes anything.
 - Visual QA pass of milestone chips in both themes on a real browser (T-006
   residual risk; no browser on the build host).
 - Game theme: full illustration pass (v1 shipped a credible token skin).

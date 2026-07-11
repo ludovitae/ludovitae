@@ -1,5 +1,16 @@
 # Decision log (ADRs, newest first)
 
+## 2026-07-11 — Product principle: decision support, never decision making
+
+Owner ruling, standing for all future features: the app must never make (or
+appear to make) financial decisions for the owner — it surfaces options,
+trade-offs, and dollar-quantified comparisons; the human decides. First
+application: future sell-side optimization (see board) may highlight, on vest
+day, that selling long-held company lots (LTCG) instead of freshly vested
+shares (ordinary/STCG) could save $X — presented as a comparison, never a
+recommendation queue, never an action button that executes anything. Wording
+in UI should be "you could…" framing with assumptions shown, not "you should".
+
 ## 2026-07-11 — Transactions-first data philosophy (owner)
 
 The ongoing data feed is frequent CSV/OFX transaction dumps plus occasional
