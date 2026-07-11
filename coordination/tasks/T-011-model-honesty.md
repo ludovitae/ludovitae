@@ -1,7 +1,7 @@
 # T-011 — Model honesty pass
 
-Owner: backend-dev agent (011a) + frontend agent (011b) · Status: 011a REVIEW,
-011b HOLD until T-008 merges · Branch: `ws/honesty-be` / `ws/honesty-fe`
+Owner: backend-dev agent (011a) + frontend agent (011b) · Status: 011a DONE,
+011b REVIEW · Branch: `ws/honesty-be` / `ws/honesty-fe`
 
 ## Scope (PM review findings 3–4, owner-accepted)
 
@@ -86,3 +86,39 @@ Owner: backend-dev agent (011a) + frontend agent (011b) · Status: 011a REVIEW,
     never re-read from the DB; `assumptions.engine_version` always equals
     the top-level `engine_version`. Cached simulation rows are keyed by
     engine version, so v1-era cache entries can never be served as v2.
+- 2026-07-11 (frontend-dev): 011b complete on `ws/honesty-fe` → **review**.
+  Commits 117fee1 (nearest-5% probability) and 508b664 (assumptions strip +
+  what-moved note). Web 148 tests green (136 + 12 new), lint clean, build
+  clean. Branched from v1.2.0.
+  - Success probability: gauge and compare table show `~75%` (nearest 5%,
+    muted tilde); exact 1% value moved to title/aria
+    (`probabilityTitle`: "About 75% — this run computed 74%"). New format
+    helpers `roundProbability5` / `formatProbabilityApprox`;
+    `formatProbability` (1%) retained for tooltips only. Ending-net-worth
+    stats untouched (full precision — market outputs, not model confidence).
+  - Assumptions strip (`AssumptionsStrip.tsx`): collapsible footer INSIDE
+    the fan-chart card (chart chrome, not a banner) in both single and
+    compare views. All values from the response `assumptions` block; zero
+    hardcoded numbers. Expanded view carries the verbatim required caveat
+    "flat tax = approximate dollar impacts for claim-age/RMD decisions"
+    plus a model-risk limit line ("bands show market luck … not model
+    risk"). Ink-3/ink-2 tones only, no warning colors. Expanded state in
+    sessionStorage (`gol.assumptionsStrip.expanded`). Compare mode: strip
+    shows the first pinned run's assumptions and appends
+    "varies by scenario — shown: <name>" when pinned runs' assumptions
+    differ (scenario return/inflation overrides).
+  - What-moved note (`WhatMovedNote.tsx` + `lib/engineVersion.ts`):
+    engine_version vs `gol.engine.lastSeen` (localStorage); on change,
+    engine_notes render once as a dismissable inline note at the top of
+    the results column. Dismissal is per version pair
+    (`gol.engine.dismissed`) — never resurfaces; no badge, no standing
+    banner (attention-economics rules). First-ever version records
+    silently (fresh browser has no "before"). Undismissed notes DO
+    re-surface on later visits until acknowledged — dismissal, not
+    viewing, retires them (reading of "actionable-once"; flag if the
+    coordinator prefers view-retires).
+  - Dev/test hook for simulating an upgrade (documented in
+    `engineVersion.ts`): `localStorage.setItem('gol.engine.lastSeen','1')`
+    — no mock changes needed since the mock already serves engine v2.
+  - Residual risk: no real-browser visual pass (no browser tooling in the
+    worktree env) — rides the existing T-009 first-mile browser QA item.

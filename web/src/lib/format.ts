@@ -47,10 +47,30 @@ export function formatPct(value: number, digits = 0): string {
   return `${value.toFixed(digits)}%`
 }
 
-/** 0.87 → "87%". */
+/** 0.87 → "87%". Exact (1%) form — tooltips/titles only since T-011. */
 export function formatProbability(p: number): string {
   if (!Number.isFinite(p)) return '—'
   return `${Math.round(p * 100)}%`
+}
+
+/** Nearest-5 percent, clamped to 0–100. */
+export function roundProbability5(p: number): number {
+  if (!Number.isFinite(p)) return NaN
+  return Math.min(100, Math.max(0, Math.round((p * 100) / 5) * 5))
+}
+
+/** T-011 model honesty: 0.737 → "~75%". Success probability displays at the
+ * model's real resolution (nearest 5%) everywhere; exact value goes in the
+ * tooltip via `probabilityTitle`. */
+export function formatProbabilityApprox(p: number): string {
+  if (!Number.isFinite(p)) return '—'
+  return `~${roundProbability5(p)}%`
+}
+
+/** Tooltip/title companion: "About 75% — this run computed 74%". */
+export function probabilityTitle(p: number): string {
+  if (!Number.isFinite(p)) return '—'
+  return `About ${roundProbability5(p)}% — this run computed ${formatProbability(p)}`
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
