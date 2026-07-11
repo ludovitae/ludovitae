@@ -16,7 +16,22 @@ Until we migrate to Forgejo, this directory *is* the project management tool.
   requires changing them, stop and flag it in your task log + final report
   instead of silently diverging.
 
-## Git workflow (pre-Forgejo)
+## GitHub workflow (adopted 2026-07-11, supersedes local-merge below)
+
+Remote: github.com/ludovitae/ludovitae. Owner decision: **the owner merges.**
+
+- Agents still commit to `ws/*` branches (unchanged).
+- After coordinator acceptance review, the coordinator pushes the branch and
+  opens a **PR**; the PR body is the acceptance review (what was verified
+  independently, what was read, rulings, test counts). CI must be green.
+- The owner reviews and merges. The coordinator never merges to main.
+  Release tagging still follows the Releases section, on the merged commit.
+- Owner-initiated work may arrive as **GitHub issues**; the coordinator
+  triages issues into tasks here (issue link in the task file). Known queued:
+  owner will file the `gol`→`ludovitae` package-rename issue after the
+  current PRs merge — do not start the rename before that issue exists.
+
+## Git workflow (pre-GitHub, historical)
 
 - Each workstream gets a branch: `ws/backend`, `ws/frontend`, `ws/qa`,
   `ws/security`. Agents commit **only** on their branch; the coordinator
