@@ -151,3 +151,70 @@ def test_member_not_found_envelope(authed):
     resp = authed.get("/api/v1/household/999")
     assert resp.status_code == 404
     assert resp.json()["error"]["code"] == "member_not_found"
+
+
+# --- #7: person-data consistency rejected at write time --------------------
+# Mirrors the invalid_plan_horizon simulate guard: birth_year in the future,
+# or life_expectancy below current age. Error code invalid_person_data.
+
+
+def test_create_future_birth_year_rejected(authed):
+    resp = authed.post(
+        "/api/v1/household",
+        json={"name": "Timelord", "role": "partner", "birth_year": 2100,
+              "life_expectancy": 90},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "invalid_person_data"
+
+
+def test_create_life_expectancy_below_current_age_rejected(authed):
+    # born 1980 → current age ~46; life_expectancy 10 is degenerate.
+    resp = authed.post(
+        "/api/v1/household",
+        json={"name": "Methuselah", "role": "partner", "birth_year": 1980,
+              "life_expectancy": 10},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "invalid_person_data"
+
+
+def test_patch_future_birth_year_rejected(authed):
+    self_id = _self(authed)["id"]
+    resp = authed.patch(f"/api/v1/household/{self_id}", json={"birth_year": 2100})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "invalid_person_data"
+
+
+def test_patch_life_expectancy_below_current_age_rejected(authed):
+    # self born 1980; existing birth_year makes life_expectancy=5 inconsistent
+    # even though only life_expectancy is sent (merged-state validation).
+    self_id = _self(authed)["id"]
+    resp = authed.patch(f"/api/v1/household/{self_id}", json={"life_expectancy": 5})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "invalid_person_data"
+
+
+def test_retirement_age_below_current_age_still_accepted(authed):
+    # The simulate guard only CLAMPS retirement_age (never rejects it), so
+    # write-time validation must not reject it either.
+    self_id = _self(authed)["id"]
+    resp = authed.patch(f"/api/v1/household/{self_id}", json={"retirement_age": 18})
+    assert resp.status_code == 200
+    assert resp.json()["retirement_age"] == 18
+
+
+def test_valid_person_writes_still_succeed(authed):
+    created = authed.post(
+        "/api/v1/household",
+        json={"name": "Dana", "role": "partner", "birth_year": 1983,
+              "life_expectancy": 94},
+    )
+    assert created.status_code == 201
+    member_id = created.json()["id"]
+    patched = authed.patch(
+        f"/api/v1/household/{member_id}",
+        json={"birth_year": 1985, "life_expectancy": 96},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["life_expectancy"] == 96

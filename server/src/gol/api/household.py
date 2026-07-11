@@ -8,7 +8,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel, Field
 
 from gol.api.common import Db, get_or_404
-from gol.assembly import get_or_create_household
+from gol.assembly import get_or_create_household, validate_person_data
 from gol.auth.deps import Authenticated
 from gol.errors import ApiError
 from gol.models import MEMBER_ROLES, HouseholdMember
@@ -72,6 +72,7 @@ def create_member(body: MemberCreate, db: Db, _: Authenticated):
         raise ApiError(
             409, "self_member_exists", "exactly one self member may exist"
         )
+    validate_person_data(body.birth_year, body.life_expectancy)
     member = HouseholdMember(**body.model_dump())
     db.add(member)
     db.flush()
@@ -94,6 +95,11 @@ def patch_member(member_id: int, body: MemberPatch, db: Db, _: Authenticated):
                 409, "self_role_immutable",
                 "the self member's role cannot change, and no other member can become self",
             )
+    if "birth_year" in data or "life_expectancy" in data:
+        validate_person_data(
+            data.get("birth_year", member.birth_year),
+            data.get("life_expectancy", member.life_expectancy),
+        )
     for key, value in data.items():
         setattr(member, key, value)
     db.flush()
