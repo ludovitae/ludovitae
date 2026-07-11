@@ -163,6 +163,93 @@ category from nothing (empty categories list is valid).
 Uncategorized transactions group under `"uncategorized"`. The UI offers
 "use observed" to copy an observed average into a spending category.
 
+## Transactions, transfers & categorization (v1.2)
+
+Transaction gains: `"transfer_pair_id": null | int` (both legs of a paired
+transfer share one id), `"category_source": "manual|rule|heuristic|ai|none"`.
+Paired transactions are **excluded from all spending analytics**. Credit-card
+model (coordinator ruling, owner-approved): spending is counted at the card
+transaction; checking→card payments are transfers; interest/fees are real
+spending (auto-category `interest-fees`). No statement-cycle modeling.
+
+Transfer pairing on import: exact-amount, opposite-sign matches across
+accounts within ±4 days auto-pair silently; near-misses become candidates.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/transfers/candidates` | `[{score, txns: [Transaction, Transaction]}]`, score 0–1 |
+| POST | `/transfers/pair` | `{transaction_ids: [a, b]}` → both legs updated |
+| DELETE | `/transfers/pair/{pair_id}` | unlink |
+
+Category rules (applied on import, priority asc, first match wins):
+
+`GET/POST /rules`, `PATCH/DELETE /rules/{id}` —
+`{id, pattern, match: "contains|exact", field: "payee", category, priority}`
+`POST /rules/apply` → `{recategorized: n}` (retroactive over uncategorized +
+rule/heuristic-sourced transactions; never overwrites manual).
+
+Bulk categorize: `POST /transactions/categorize` `{ids: [...], category}`
+(sets `category_source: "manual"`). `GET /transactions` gains
+`?uncategorized=1` filter.
+
+AI categorization is **stubbed in v1.2**: `POST /categorize/suggest`
+`{payees: [...]}` runs heuristics only and returns
+`{suggestions: [{payee, category, confidence}], source: "heuristic"}`;
+the Claude-backed implementation lands behind the same endpoint later and
+must respect the AI budget (below).
+
+## Import freshness (v1.2)
+
+Account gains: `"last_import_at": null | datetime`,
+`"newest_transaction_date": null | date`, `"staleness_days": null | int`
+(per-account override; default threshold 35 days),
+`"freshness": "fresh|aging|stale|never"` (computed: aging at 2/3 threshold,
+stale past it; `never` = no imports and no transactions; accounts with
+`track_freshness: false` — default false for property/vehicle/other types,
+true for cash/card/investment types — report `"freshness": "off"`).
+`GET /dashboard` gains `"stale_accounts": [{id, name, freshness,
+days_since_import}]` (aging + stale only).
+
+## Spending analytics (v1.2)
+
+All exclude transfer-paired transactions.
+
+`GET /spending/summary?from=&to=&group_by=month` →
+`{"months": ["2026-01", ...], "categories": [{"category": "groceries",
+"totals": [820.0, ...], "total": 9840.0}], "grand_total": 62000.0}`
+
+`GET /spending/recurring` → detected recurring charges:
+`[{"payee": "Netflix", "category": "subscriptions", "cadence":
+"monthly|weekly|annual", "typical_amount": 15.49, "last_amount": 17.99,
+"price_change_pct": 16.1, "last_date": "2026-06-28", "first_seen":
+"2024-01-28", "occurrences": 30, "active": true, "monthly_equivalent": 17.99}]`
+Detection: same normalized payee, ≥3 occurrences, regular cadence (±5 days
+tolerance), amount within ±20% (price changes flagged, not disqualifying).
+`active`: seen within 1.5× cadence.
+
+`GET /spending/hotspots?months=6` →
+`{"category_spikes": [{"category", "recent_monthly_avg",
+"baseline_monthly_avg", "delta_pct"}], "top_merchants": [{"payee",
+"monthly_avg", "txn_count"}], "price_increases": [recurring subset],
+"possibly_forgotten": [recurring subset — active, low-variance, running
+≥ 12 months]}`
+
+`GET /spending/forecast?months=12` → `{"months": [...], "recurring": [...],
+"variable_by_category": [...], "total": [...]}` — recurring charges projected
+at cadence + trailing-average for non-recurring per category.
+
+## AI budget & admin (v1.2 — ships before any AI calls exist)
+
+`GET /settings/ai` → `{"has_api_key": true, "api_key_last4": "x7Q2",
+"enabled": false, "monthly_budget_usd": 5.0, "spend_this_month_usd": 0.0,
+"tokens_this_month": {"input": 0, "output": 0}}`
+`PUT /settings/ai` — `{api_key?, enabled?, monthly_budget_usd?}`; the key is
+write-only (never echoed), stored in the local DB, `api_key: null` deletes it.
+`GET /ai/usage?months=6` → `[{"month": "2026-07", "input_tokens": n,
+"output_tokens": n, "est_cost_usd": x, "by_purpose": {"categorize": {...}}}]`
+Every future AI call must write an `ai_usage` ledger row and hard-stop with
+403 `ai_budget_exhausted` when the month's spend would exceed the budget.
+
 ## Transactions & import
 
 `GET /transactions?account_id=&from=&to=&limit=` →

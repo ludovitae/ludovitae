@@ -1,5 +1,23 @@
 # Decision log (ADRs, newest first)
 
+## 2026-07-11 — v1.2: real spending, credit cards, freshness, AI budget
+
+1. **Credit cards without double-entry pain** (owner-approved): spending
+   counts at the card swipe; checking→card payments auto-pair as transfers
+   and vanish from analytics; interest/fees are real spending; grace periods
+   are a cash-flow-timing concern already covered by balance snapshots — no
+   statement-cycle modeling.
+2. **Transfer pairing**: confident matches (exact amount, opposite sign,
+   ±4 days) link silently; near-misses go to a review queue. (Owner chose
+   auto-pair over review-everything.)
+3. **Categorization is layered**: manual > rules > heuristics > AI. AI is
+   **stubbed** in v1.2 (owner decision — nothing leaves the machine yet), but
+   the endpoint shape, review flow, and the AI **budget ledger + admin panel**
+   ship now so a Claude API key can be added later with spend caps already
+   enforced (hard-stop 403 at monthly budget).
+4. Staleness warnings are in-app only (badges + dashboard strip), threshold
+   35 days default, per-account override, off for non-transactional types.
+
 ## 2026-07-10 — v1.1: household, spending profile, retirement timing
 
 1. **Person-level data moves to HouseholdMember** (exactly one `self`);
