@@ -23,6 +23,8 @@ from gol.errors import ApiError, install_error_handlers
 
 # repo_root/web/dist, overridable for tests/packaging
 _DEFAULT_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
+# Built SPA bundled into the wheel (#13); populated by the build step in README.
+_PACKAGED_DIST = Path(__file__).resolve().parent / "_webdist"
 
 
 async def _snapshot_loop() -> None:
@@ -92,16 +94,36 @@ def create_app() -> FastAPI:
     return app
 
 
+def _resolve_dist() -> Path | None:
+    """Locate the built SPA (#13). Search order: the GOL_WEB_DIST override, the
+    repo's web/dist (source checkout), then gol/_webdist bundled into the wheel.
+
+    GOL_WEB_DIST is authoritative when set — it is used exclusively (an explicit
+    override should not silently fall through to a different build), so a set but
+    missing path yields API-only mode. Only when it is UNSET do we fall back to
+    web/dist and then the packaged bundle. Returns the first directory that has
+    an index.html, else None.
+    """
+    env = os.environ.get("GOL_WEB_DIST")
+    candidates = [Path(env)] if env else [_DEFAULT_DIST, _PACKAGED_DIST]
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if (resolved / "index.html").is_file():
+            return resolved
+    return None
+
+
 def _mount_spa(app: FastAPI) -> None:
     """Serve the built frontend (web/dist) with an SPA fallback to index.html.
 
     Registered after the API routers, so /api/v1 always wins. No-op when the
-    frontend hasn't been built (dev setups use the Vite proxy instead).
+    frontend hasn't been built (dev setups use the Vite proxy instead) —
+    API-only mode.
     """
-    dist = Path(os.environ.get("GOL_WEB_DIST", _DEFAULT_DIST)).resolve()
-    index = dist / "index.html"
-    if not index.is_file():
+    dist = _resolve_dist()
+    if dist is None:
         return
+    index = dist / "index.html"
 
     @app.get("/{path:path}", include_in_schema=False)
     async def spa(path: str) -> FileResponse:

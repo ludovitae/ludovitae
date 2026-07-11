@@ -116,3 +116,25 @@ cd server && uv sync && uv run uvicorn gol.main:app --reload
 # frontend
 cd web && npm install && npm run dev
 ```
+
+## Building a distributable wheel (with the UI inside)
+
+`pip install ludovitae` should ship the whole app — server *and* built UI — so
+`gol-serve` works with no separate frontend step. Build the SPA, stage it into
+the package as `gol/_webdist/` (gitignored; hatchling force-includes it into the
+wheel), then build:
+
+```sh
+# build wheel with UI
+cd web && npm run build && cp -r dist ../server/src/gol/_webdist && cd ../server && uv build
+```
+
+Or run the wrapper (installs web deps, stages, builds) from the repo root:
+
+```sh
+scripts/build-wheel.sh
+```
+
+At runtime the server finds the UI in this order: `GOL_WEB_DIST` (explicit
+override — used exclusively when set), the repo's `web/dist` (source checkout),
+then the packaged `gol/_webdist/`. With none present it runs in API-only mode.
