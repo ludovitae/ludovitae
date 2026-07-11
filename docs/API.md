@@ -33,13 +33,20 @@ POST/PATCH/PUT/DELETE.
 ```json
 {
   "annual_retirement_spending": 80000, "inflation_pct": 2.5,
-  "effective_tax_rate_pct": 18
+  "effective_tax_rate_pct": null
 }
 ```
 
 Person-level fields (birth_year, retirement_age, life_expectancy, social
 security) moved to household members in v1.1. Migration creates member 1
 ("You", role `self`) from the old profile columns.
+
+v1.2.2 (T-012 phase 2): `effective_tax_rate_pct` is a **nullable flat-rate
+override** (`null | 0..100`). A value runs the flat-rate tax engine exactly
+as before; `null` (also the PUT default when omitted) runs the bracket-aware
+federal model. Fresh profiles default to `null`; migration keeps existing
+profiles' stored value so upgraded databases simulate identically until the
+owner clears the override.
 
 ## Household members (v1.1)
 
@@ -337,14 +344,15 @@ v1.1: top-level `retirement_age` is sugar for the `self` member's override
 
 ```json
 {
-  "engine_version": "2",
-  "engine_notes": ["Taxable Social Security capped at 85% (was 100%)"],
+  "engine_version": "3",
+  "engine_notes": ["<bracket-mode change summary>", "<flat-mode note>"],
   "assumptions": {
     "market": {"stocks_mean_pct": 7.0, "stocks_vol_pct": 15.0,
                "bonds_mean_pct": 3.5, "bonds_vol_pct": 7.0,
                "cash_mean_pct": 1.5, "cash_vol_pct": 0.5},
-    "inflation_pct": 2.5, "effective_tax_rate_pct": 18.0,
-    "ss_taxable_share": 0.85, "engine_version": "2"
+    "inflation_pct": 2.5,
+    "tax_model": "brackets", "filing_status": "single",
+    "engine_version": "3"
   },
   "n_paths": 1000, "seed": 42,
   "start_year": 2026, "ages": [46, 47, ...],
@@ -371,9 +379,20 @@ Arrays are annual (one value per age, year-end). Synchronous; target < 1.5s at
 v1.1.1 (engine v2, T-011a): `engine_notes` lists human-readable behavior
 changes since the prior engine version; `assumptions` reflects the resolved
 PlanInputs the run actually used (scenario overrides included), never
-re-read from the DB; the sim result cache is keyed by engine version. A
-future `assumptions.tax_model` field ("flat" | "brackets") is reserved for
-the T-012 phase-2 integration.
+re-read from the DB; the sim result cache is keyed by engine version.
+
+v1.2.2 (engine v3, T-012 phase 2): `assumptions.tax_model` names the tax
+path the run used — `"flat" | "brackets"`, driven by the profile's nullable
+`effective_tax_rate_pct`. Flat mode carries `effective_tax_rate_pct` and
+`ss_taxable_share` exactly as in v1.1.1 and is numerically unchanged from
+engine v2. Bracket mode carries `assumptions.filing_status`
+(`"single" | "mfj"`; mfj iff the household has ≥ 2 members with role in
+{`self`, `partner`} — `other` adults and children never affect it) and
+drops the two flat-mode fields. Bracket mode: 2026 federal brackets and
+standard deduction (indexed by the sim's per-path price level), Social
+Security taxed via provisional income (thresholds nominal per IRC §86(c)),
+RMDs and tax-deferred withdrawal shares taxed as ordinary income with an
+annual December settlement — see docs/TAX-DESIGN.md.
 
 v1.1: `ages` is the `self` member's age axis. `milestones` (sorted by age)
 carries every member's retirement / SS-claim / RMD-start events under the
