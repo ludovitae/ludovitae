@@ -1,5 +1,20 @@
 # Decision log (ADRs, newest first)
 
+## 2026-07-10 — v1.1: household, spending profile, retirement timing
+
+1. **Person-level data moves to HouseholdMember** (exactly one `self`);
+   Profile keeps household-level assumptions. Accounts/flows gain optional
+   owners. Migration synthesizes the self member from v1 profile data and must
+   be sim-identical for single-member households (regression-tested).
+2. **US rules, coarse but real**: SS claiming factors 62→0.70 … 70→1.24
+   around FRA 67; RMDs at 73/75 (SECURE 2.0) via Uniform Lifetime Table,
+   taxed at the effective rate. Tax brackets remain v2.
+3. **Spending categories coexist with expense flows** (both count; UI makes
+   the combined total visible) rather than a breaking migration. Observed
+   spending is computed from transactions on demand, never stored.
+4. **Milestones are an engine output** (not derived in the UI) so chart
+   markers always agree with what the simulation actually did.
+
 ## 2026-07-10 — Foundational decisions (owner + architect)
 
 1. **Data ingestion is phased**: v1 manual + CSV/OFX, aggregator sync in v2

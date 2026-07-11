@@ -26,18 +26,52 @@ After login, the CSRF token is also readable via `GET /auth/session` →
 `{..., csrf_token}` when authenticated. Send it as `X-CSRF-Token` on every
 POST/PATCH/PUT/DELETE.
 
-## Profile (singleton)
+## Profile (singleton — household-level assumptions only, v1.1)
 
 `GET /profile` / `PUT /profile`
 
 ```json
 {
-  "birth_year": 1980, "retirement_age": 65, "life_expectancy": 92,
-  "annual_retirement_spending": 80000, "social_security_monthly": 2200,
-  "social_security_start_age": 67, "inflation_pct": 2.5,
+  "annual_retirement_spending": 80000, "inflation_pct": 2.5,
   "effective_tax_rate_pct": 18
 }
 ```
+
+Person-level fields (birth_year, retirement_age, life_expectancy, social
+security) moved to household members in v1.1. Migration creates member 1
+("You", role `self`) from the old profile columns.
+
+## Household members (v1.1)
+
+`GET/POST /household`, `GET/PATCH/DELETE /household/{id}`
+
+```json
+{
+  "id": 1, "name": "Brian", "role": "self",
+  "birth_year": 1980, "life_expectancy": 92,
+  "retirement_age": 65,
+  "ss_monthly_at_fra": 2200, "ss_claim_age": 67,
+  "notes": ""
+}
+```
+
+`role`: `self|partner|child|other`. `retirement_age`, `ss_monthly_at_fra`,
+`ss_claim_age` nullable (children/non-earners). `ss_claim_age` 62–70; the
+benefit is adjusted from the FRA amount with standard actuarial factors
+(62→0.70 … 67→1.00 … 70→1.24, per-year linear steps; FRA fixed at 67).
+Exactly one `self` member must exist; it cannot be deleted.
+The simulation horizon runs to the latest life expectancy in the household.
+Retirement-spending transition: household `annual_retirement_spending` takes
+over (and generic expenses stop) when the LAST member with a retirement_age
+retires; each member's own income stops at their own retirement age.
+RMDs: members with tax-deferred (`retirement`-type) accounts take forced
+annual distributions starting at 73 (born before 1960) or 75 (born 1960+),
+amount = balance / Uniform-Lifetime-Table divisor, taxed at the effective rate.
+
+Ownership: `Account` and `Flow` gain nullable `member_id`. An income flow with
+`ends_at_retirement` stops at its owner's retirement age (unowned income uses
+the last-retirement age). Retirement-type accounts should be owned; unowned
+tax-deferred balances use the `self` member for RMD timing.
 
 ## Accounts
 
@@ -48,6 +82,7 @@ POST/PATCH/PUT/DELETE.
   "id": 1, "name": "Vanguard Brokerage", "type": "brokerage",
   "institution": "Vanguard", "balance": 250000.0,
   "growth_rate_pct": null, "asset_class": "stocks",
+  "member_id": 1,
   "include_in_net_worth": true, "notes": "", "created_at": "2026-07-10"
 }
 ```
@@ -68,7 +103,7 @@ creates a snapshot dated today.
 {
   "id": 1, "name": "Salary", "kind": "income", "amount_monthly": 9500.0,
   "annual_growth_pct": 3.0, "start_date": null, "end_date": null,
-  "account_id": null, "category": "salary",
+  "account_id": null, "category": "salary", "member_id": 1,
   "ends_at_retirement": true
 }
 ```
@@ -86,6 +121,47 @@ creates a snapshot dated today.
   "notes": "the dream"
 }
 ```
+
+## Spending profile (v1.1)
+
+`GET /spending` / `PUT /spending` (full replace)
+
+```json
+{
+  "categories": [
+    {"id": 1, "name": "Housing", "monthly_amount": 2500.0,
+     "kind": "essential", "annual_growth_pct": null},
+    {"id": 2, "name": "Dining out", "monthly_amount": 600.0,
+     "kind": "discretionary", "annual_growth_pct": null}
+  ],
+  "monthly_savings_target": 1500.0
+}
+```
+
+`kind`: `essential|discretionary`. `annual_growth_pct` null → inflation
+assumption. Sim semantics: categories are expense streams (they stop at the
+household retirement transition like other expenses); `monthly_savings_target`
+is informational for the UI (actual saving comes from contribution flows).
+**Double-count rule**: spending categories and `expense`-kind flows both count
+in the sim; the UI must steer users toward categories and show a combined
+total so double entry is visible. Migration seeds one "Everything else"
+category from nothing (empty categories list is valid).
+
+`GET /spending/observed?months=12` — computed from imported transactions
+(outflows only), trailing N months (default 12, max 60):
+
+```json
+{
+  "months": 12, "from": "2025-07-01", "to": "2026-07-01",
+  "total_monthly_avg": 5240.0,
+  "by_category": [
+    {"category": "groceries", "monthly_avg": 820.0, "txn_count": 96}
+  ]
+}
+```
+
+Uncategorized transactions group under `"uncategorized"`. The UI offers
+"use observed" to copy an observed average into a spending category.
 
 ## Transactions & import
 
@@ -110,8 +186,13 @@ Duplicate detection: (account, date, amount, payee) hash.
   "id": 3, "name": "Retire at 55", "description": "", "is_baseline": false,
   "params": {
     "retirement_age": 55,
+    "member_overrides": {
+      "1": {"retirement_age": 55, "ss_claim_age": 62},
+      "2": {"retirement_age": 60}
+    },
     "monthly_savings_delta": 500.0,
     "annual_retirement_spending": 70000.0,
+    "spending_delta_pct": -10.0,
     "return_override_pct": null, "inflation_override_pct": null,
     "events": [
       {"name": "Take up golf", "kind": "recurring_expense",
@@ -134,6 +215,11 @@ spending (expenses −delta, invested contributions +delta, until retirement).
 A synthetic read-only baseline scenario (`id: 0`, `is_baseline: true`,
 name "Current trajectory") always exists.
 
+v1.1: top-level `retirement_age` is sugar for the `self` member's override
+(kept for compatibility). `member_overrides` keys are member ids as strings
+(JSON object keys); allowed per-member keys: `retirement_age`, `ss_claim_age`.
+`spending_delta_pct` scales all spending categories + expense flows.
+
 ## Simulation
 
 `POST /simulate` — `{"scenario_id": 3}` or `{"params": {...}}`, plus optional
@@ -148,12 +234,26 @@ name "Current trajectory") always exists.
   "percentiles": {"p10": [...], "p25": [...], "p50": [...], "p75": [...], "p90": [...]},
   "success_probability": 0.87,
   "median_ruin_age": null,
-  "ending_net_worth": {"p10": 120000, "p50": 1400000, "p90": 4100000}
+  "ending_net_worth": {"p10": 120000, "p50": 1400000, "p90": 4100000},
+  "milestones": [
+    {"age": 55, "year": 2035, "kind": "retirement",
+     "label": "Brian retires", "member_id": 1},
+    {"age": 62, "year": 2042, "kind": "ss_start",
+     "label": "Brian claims Social Security (70% of FRA)", "member_id": 1},
+    {"age": 75, "year": 2055, "kind": "rmd_start",
+     "label": "RMDs begin for Brian", "member_id": 1}
+  ]
 }
 ```
 
 Arrays are annual (one value per age, year-end). Synchronous; target < 1.5s at
 1000 paths.
+
+v1.1: `ages` is the `self` member's age axis. `milestones` (sorted by age)
+carries every member's retirement / SS-claim / RMD-start events under the
+scenario's overrides, expressed on the self-age axis, for chart annotation.
+`kind`: `retirement|ss_start|rmd_start`. Milestones beyond the horizon are
+omitted.
 
 `POST /scenarios/compare` — `{"scenario_ids": [0, 3, 4], "n_paths": 1000, "seed": 42}`
 → `{"results": [{"scenario_id": 0, "name": "...", <simulate response>}, ...]}`

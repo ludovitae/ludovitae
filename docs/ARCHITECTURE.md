@@ -42,8 +42,15 @@ coordination/    agent task board & protocol
 
 ## Domain model
 
-- **Profile** (singleton): birth_year, default retirement_age, life_expectancy,
-  annual_retirement_spending, social_security_monthly, inflation assumption.
+- **Profile** (singleton, v1.1): household-level assumptions only —
+  annual_retirement_spending, inflation_pct, effective_tax_rate_pct.
+- **HouseholdMember** (v1.1): name, role (self/partner/child/other),
+  birth_year, life_expectancy, retirement_age?, ss_monthly_at_fra?,
+  ss_claim_age? (62–70, actuarial factors vs FRA 67). Exactly one `self`.
+  Accounts and flows may be owned by a member (`member_id`).
+- **SpendingCategory** (v1.1): name, monthly_amount, essential/discretionary,
+  growth override; plus a household monthly_savings_target. Observed spending
+  is computed on demand from imported transactions (no stored table).
 - **Account**: name, type (checking, savings, brokerage, retirement, hsa,
   property, vehicle, other_asset, mortgage, loan, credit_card, other_liability),
   current balance, optional `growth_rate_pct` override (e.g. house appreciation,
@@ -76,6 +83,16 @@ Pure numpy, no ORM imports — takes a `PlanInputs` dataclass, returns arrays.
    success probability (money outlives you), median ruin age when applicable.
 3. Taxes are a coarse effective-rate knob in v1 (documented limitation);
    proper bracket/withdrawal-ordering modeling is a v2 item.
+4. **v1.1 — household & timing.** Buckets become: cash, taxable invested,
+   tax-deferred invested *per member* (retirement-type accounts by owner),
+   property, debt. Per member: income stops at their retirement age; SS starts
+   at their claim age with the actuarial factor (62→0.70 … 70→1.24, FRA 67);
+   RMDs force annual distributions from their tax-deferred bucket starting at
+   73/75 (birth year < 1960 / ≥ 1960) using the IRS Uniform Lifetime Table
+   divisor, taxed at the effective rate, remainder to cash. Household spending
+   transition at the last retirement. Horizon = latest life expectancy;
+   outputs stay on the self member's age axis. Engine emits the milestone
+   list (retirement/ss_start/rmd_start per member) alongside the arrays.
 
 Determinism: every run accepts a seed; tests pin seeds.
 
