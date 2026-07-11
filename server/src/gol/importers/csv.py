@@ -51,13 +51,19 @@ def _decode(data: bytes) -> str:
 
 
 def _rows(text: str) -> list[list[str]]:
+    # Sniff ONLY the delimiter (#26): the Sniffer's inferred quoting flags are
+    # unreliable on samples with multiline quoted fields (a real Amex export
+    # made it pick doublequote=False, corrupting records with escaped quotes).
+    # Excel semantics — doublequote, '"' — are the RFC behavior we support.
     sample = text[:4096]
     try:
-        dialect = csvlib.Sniffer().sniff(sample, delimiters=",;\t|")
+        delimiter = csvlib.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
     except csvlib.Error:
-        dialect = csvlib.excel
+        delimiter = ","
     rows = [
-        row for row in csvlib.reader(io.StringIO(text), dialect) if any(c.strip() for c in row)
+        row
+        for row in csvlib.reader(io.StringIO(text), delimiter=delimiter)
+        if any(c.strip() for c in row)
     ]
     # Preamble tolerance (#26): real exports open with title/disclaimer lines
     # before the header. The header is the first row with >= 2 non-empty
