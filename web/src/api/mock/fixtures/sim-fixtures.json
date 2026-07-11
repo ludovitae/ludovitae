@@ -71,7 +71,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -81,7 +81,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -361,9 +362,10 @@
               "p90": 12803690.89
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 91.1,
             "milestones": [
               {
@@ -746,7 +748,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -756,7 +758,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -1036,9 +1039,10 @@
               "p90": 25033355.57
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.0,
             "milestones": [
               {
@@ -1428,7 +1432,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -1438,7 +1442,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -1718,9 +1723,10 @@
               "p90": 34716297.97
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.9,
             "milestones": [
               {
@@ -2110,7 +2116,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -2120,7 +2126,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -2400,9 +2407,10 @@
               "p90": 36743034.35
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.5,
             "milestones": [
               {
@@ -2792,7 +2800,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -2802,7 +2810,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -3082,9 +3091,10 @@
               "p90": 37659492.42
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.2,
             "milestones": [
               {
@@ -3474,7 +3484,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -3484,7 +3494,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -3764,9 +3775,10 @@
               "p90": 38586347.89
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.7,
             "milestones": [
               {
@@ -4156,7 +4168,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -4166,7 +4178,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -4446,9 +4459,10 @@
               "p90": 41005927.94
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.0,
             "milestones": [
               {
@@ -4838,7 +4852,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -4848,7 +4862,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -5128,9 +5143,10 @@
               "p90": 41933620.26
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.5,
             "milestones": [
               {
@@ -5520,7 +5536,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -5530,7 +5546,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -5810,9 +5827,10 @@
               "p90": 44469471.52
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 97.2,
             "milestones": [
               {
@@ -6211,7 +6229,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -6221,7 +6239,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -6501,9 +6520,10 @@
               "p90": 26511338.57
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 92.7,
             "milestones": [
               {
@@ -6893,7 +6913,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -6903,7 +6923,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -7183,9 +7204,10 @@
               "p90": 31932492.58
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.5,
             "milestones": [
               {
@@ -7575,7 +7597,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -7585,7 +7607,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -7865,9 +7888,10 @@
               "p90": 34903087.05
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 92.4,
             "milestones": [
               {
@@ -8257,7 +8281,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -8267,7 +8291,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -8547,9 +8572,10 @@
               "p90": 36487969.52
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.9,
             "milestones": [
               {
@@ -8939,7 +8965,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -8949,7 +8975,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -9229,9 +9256,10 @@
               "p90": 37386009.38
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.7,
             "milestones": [
               {
@@ -9621,7 +9649,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -9631,7 +9659,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -9911,9 +9940,10 @@
               "p90": 37941038.13
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.4,
             "milestones": [
               {
@@ -10303,7 +10333,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -10313,7 +10343,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -10593,9 +10624,10 @@
               "p90": 39333260.77
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.3,
             "milestones": [
               {
@@ -10985,7 +11017,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -10995,7 +11027,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -11275,9 +11308,10 @@
               "p90": 40603075.53
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 96.1,
             "milestones": [
               {
@@ -11667,7 +11701,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -11677,7 +11711,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -11957,9 +11992,10 @@
               "p90": 42232385.23
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 96.9,
             "milestones": [
               {
@@ -12358,7 +12394,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -12368,7 +12404,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -12648,9 +12685,10 @@
               "p90": 39510569.98
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.5,
             "milestones": [
               {
@@ -13040,7 +13078,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -13050,7 +13088,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -13330,9 +13369,10 @@
               "p90": 39573019.89
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.4,
             "milestones": [
               {
@@ -13722,7 +13762,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -13732,7 +13772,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -14012,9 +14053,10 @@
               "p90": 39630404.87
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.8,
             "milestones": [
               {
@@ -14404,7 +14446,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -14414,7 +14456,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -14694,9 +14737,10 @@
               "p90": 39713564.3
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.0,
             "milestones": [
               {
@@ -15086,7 +15130,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -15096,7 +15140,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -15376,9 +15421,10 @@
               "p90": 39791297.14
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.0,
             "milestones": [
               {
@@ -15768,7 +15814,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -15778,7 +15824,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -16058,9 +16105,10 @@
               "p90": 39944438.05
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.4,
             "milestones": [
               {
@@ -16450,7 +16498,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -16460,7 +16508,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -16740,9 +16789,10 @@
               "p90": 40015308.86
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.8,
             "milestones": [
               {
@@ -17132,7 +17182,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -17142,7 +17192,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -17422,9 +17473,10 @@
               "p90": 40077733.61
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.9,
             "milestones": [
               {
@@ -17823,7 +17875,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -17833,7 +17885,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -18113,9 +18166,10 @@
               "p90": 39578608.97
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.8,
             "milestones": [
               {
@@ -18505,7 +18559,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -18515,7 +18569,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -18795,9 +18850,10 @@
               "p90": 39630098.64
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.0,
             "milestones": [
               {
@@ -19187,7 +19243,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -19197,7 +19253,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -19477,9 +19534,10 @@
               "p90": 39678423.07
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.0,
             "milestones": [
               {
@@ -19869,7 +19927,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -19879,7 +19937,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -20159,9 +20218,10 @@
               "p90": 39745958.77
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.8,
             "milestones": [
               {
@@ -20551,7 +20611,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -20561,7 +20621,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -20841,9 +20902,10 @@
               "p90": 39807473.54
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.0,
             "milestones": [
               {
@@ -21233,7 +21295,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -21243,7 +21305,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -21523,9 +21586,10 @@
               "p90": 39926301.99
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.3,
             "milestones": [
               {
@@ -21915,7 +21979,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -21925,7 +21989,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -22205,9 +22270,10 @@
               "p90": 39984499.1
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.5,
             "milestones": [
               {
@@ -22597,7 +22663,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -22607,7 +22673,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -22887,9 +22954,10 @@
               "p90": 40035674.16
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.6,
             "milestones": [
               {
@@ -23284,7 +23352,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -23294,7 +23362,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -23574,9 +23643,10 @@
               "p90": 41221259.41
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.5,
             "milestones": [
               {
@@ -23962,7 +24032,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -23972,7 +24042,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -24252,9 +24323,10 @@
               "p90": 40768655.32
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.1,
             "milestones": [
               {
@@ -24640,7 +24712,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -24650,7 +24722,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -24930,9 +25003,10 @@
               "p90": 40316051.22
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.4,
             "milestones": [
               {
@@ -25318,7 +25392,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -25328,7 +25402,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -25608,9 +25683,10 @@
               "p90": 39410843.04
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.9,
             "milestones": [
               {
@@ -25996,7 +26072,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -26006,7 +26082,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -26286,9 +26363,10 @@
               "p90": 38958238.94
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.8,
             "milestones": [
               {
@@ -26674,7 +26752,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -26684,7 +26762,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -26964,9 +27043,10 @@
               "p90": 38505634.85
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.1,
             "milestones": [
               {
@@ -27361,7 +27441,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -27371,7 +27451,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -27651,9 +27732,10 @@
               "p90": 20362144.24
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.1,
             "milestones": [
               {
@@ -28039,7 +28121,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -28049,7 +28131,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -28329,9 +28412,10 @@
               "p90": 26368293.65
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.0,
             "milestones": [
               {
@@ -28717,7 +28801,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -28727,7 +28811,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -29007,9 +29092,10 @@
               "p90": 33270519.29
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.2,
             "milestones": [
               {
@@ -29395,7 +29481,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -29405,7 +29491,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -29685,9 +29772,10 @@
               "p90": 36785682.45
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.1,
             "milestones": [
               {
@@ -30073,7 +30161,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -30083,7 +30171,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -30363,9 +30452,10 @@
               "p90": 43146406.14
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.5,
             "milestones": [
               {
@@ -30751,7 +30841,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -30761,7 +30851,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -31041,9 +31132,10 @@
               "p90": 45934086.19
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.7,
             "milestones": [
               {
@@ -31429,7 +31521,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -31439,7 +31531,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -31719,9 +31812,10 @@
               "p90": 52762752.1
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 94.9,
             "milestones": [
               {
@@ -32107,7 +32201,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -32117,7 +32211,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -32397,9 +32492,10 @@
               "p90": 59261613.04
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.8,
             "milestones": [
               {
@@ -32794,7 +32890,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -32804,7 +32900,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -33084,9 +33181,10 @@
               "p90": 43702535.38
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": null,
             "milestones": [
               {
@@ -33472,7 +33570,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -33482,7 +33580,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -33762,9 +33861,10 @@
               "p90": 42830049.37
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": null,
             "milestones": [
               {
@@ -34150,7 +34250,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -34160,7 +34260,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -34440,9 +34541,10 @@
               "p90": 41392058.73
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": null,
             "milestones": [
               {
@@ -34828,7 +34930,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -34838,7 +34940,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -35118,9 +35221,10 @@
               "p90": 40600816.5
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 97.3,
             "milestones": [
               {
@@ -35506,7 +35610,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -35516,7 +35620,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -35796,9 +35901,10 @@
               "p90": 39071049.79
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 95.2,
             "milestones": [
               {
@@ -36184,7 +36290,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -36194,7 +36300,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -36474,9 +36581,10 @@
               "p90": 38509375.16
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.8,
             "milestones": [
               {
@@ -36862,7 +36970,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -36872,7 +36980,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -37152,9 +37261,10 @@
               "p90": 35836208.92
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 93.0,
             "milestones": [
               {
@@ -37540,7 +37650,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -37550,7 +37660,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -37830,9 +37941,10 @@
               "p90": 34085031.29
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 90.8,
             "milestones": [
               {
@@ -38218,7 +38330,7 @@
             ],
             "assumptions": {
               "effective_tax_rate_pct": 18.0,
-              "engine_version": "2",
+              "engine_version": "3",
               "inflation_pct": 2.5,
               "market": {
                 "bonds_mean_pct": 3.5,
@@ -38228,7 +38340,8 @@
                 "stocks_mean_pct": 7.0,
                 "stocks_vol_pct": 15.0
               },
-              "ss_taxable_share": 0.85
+              "ss_taxable_share": 0.85,
+              "tax_model": "flat"
             },
             "deterministic": {
               "cash": [
@@ -38508,9 +38621,10 @@
               "p90": 32078089.39
             },
             "engine_notes": [
-              "Taxable Social Security capped at 85% (was 100%)"
+              "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+              "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
             ],
-            "engine_version": "2",
+            "engine_version": "3",
             "median_ruin_age": 90.0,
             "milestones": [
               {
@@ -38898,7 +39012,7 @@
       ],
       "assumptions": {
         "effective_tax_rate_pct": 18.0,
-        "engine_version": "2",
+        "engine_version": "3",
         "inflation_pct": 2.5,
         "market": {
           "bonds_mean_pct": 3.5,
@@ -38908,7 +39022,8 @@
           "stocks_mean_pct": 7.0,
           "stocks_vol_pct": 15.0
         },
-        "ss_taxable_share": 0.85
+        "ss_taxable_share": 0.85,
+        "tax_model": "flat"
       },
       "deterministic": {
         "cash": [
@@ -39188,9 +39303,10 @@
         "p90": 39863447.13
       },
       "engine_notes": [
-        "Taxable Social Security capped at 85% (was 100%)"
+        "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+        "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
       ],
-      "engine_version": "2",
+      "engine_version": "3",
       "median_ruin_age": 94.0,
       "milestones": [
         {
@@ -39515,9 +39631,10 @@
     }
   },
   "engine_notes": [
-    "Taxable Social Security capped at 85% (was 100%)"
+    "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+    "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
   ],
-  "engine_version": "2",
+  "engine_version": "3",
   "n_paths": 1000,
   "reference_year": 2026,
   "scenarios": [
@@ -39584,7 +39701,7 @@
         ],
         "assumptions": {
           "effective_tax_rate_pct": 18.0,
-          "engine_version": "2",
+          "engine_version": "3",
           "inflation_pct": 2.5,
           "market": {
             "bonds_mean_pct": 3.5,
@@ -39594,7 +39711,8 @@
             "stocks_mean_pct": 7.0,
             "stocks_vol_pct": 15.0
           },
-          "ss_taxable_share": 0.85
+          "ss_taxable_share": 0.85,
+          "tax_model": "flat"
         },
         "deterministic": {
           "cash": [
@@ -39874,9 +39992,10 @@
           "p90": 35788367.99
         },
         "engine_notes": [
-          "Taxable Social Security capped at 85% (was 100%)"
+          "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+          "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
         ],
-        "engine_version": "2",
+        "engine_version": "3",
         "median_ruin_age": 95.2,
         "milestones": [
           {
@@ -40271,7 +40390,7 @@
         ],
         "assumptions": {
           "effective_tax_rate_pct": 18.0,
-          "engine_version": "2",
+          "engine_version": "3",
           "inflation_pct": 2.5,
           "market": {
             "bonds_mean_pct": 3.5,
@@ -40281,7 +40400,8 @@
             "stocks_mean_pct": 7.0,
             "stocks_vol_pct": 15.0
           },
-          "ss_taxable_share": 0.85
+          "ss_taxable_share": 0.85,
+          "tax_model": "flat"
         },
         "deterministic": {
           "cash": [
@@ -40561,9 +40681,10 @@
           "p90": 29818691.14
         },
         "engine_notes": [
-          "Taxable Social Security capped at 85% (was 100%)"
+          "Bracket-aware federal tax when the flat-rate override is unset (tax_model=brackets): 2026 brackets and standard deduction indexed by simulated inflation, Social Security taxed via provisional income (replaces the flat 85% cap), RMDs and withdrawals fill brackets; annual settlement with monthly withholding",
+          "Flat-rate mode (effective_tax_rate_pct set, tax_model=flat) is numerically unchanged from engine v2"
         ],
-        "engine_version": "2",
+        "engine_version": "3",
         "median_ruin_age": 95.2,
         "milestones": [
           {
