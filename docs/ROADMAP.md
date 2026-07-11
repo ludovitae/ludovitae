@@ -47,6 +47,23 @@ updated in the same commit that opens a version's tasks.
 
 - Bracket-aware taxes: brackets, withdrawal ordering, provisional-income SS
   taxation, capital gains; prerequisite for sell-side work.
+- **Roth conversion timing** (owner ask 2026-07-11: "optimize my backdoor
+  roth contributions when i get into a lower tax bracket … a slider 'when to
+  start backdooring'"): scenario slider = start age for annual
+  traditional→Roth conversions (+ annual conversion amount or
+  fill-to-bracket-top), with the conversion taxed at the bracket-aware rate
+  in that year and Roth growing tax-free thereafter. **Hard dependencies**:
+  (a) bracket-aware tax (T-012) — conversion optimization is meaningless on
+  a flat rate; (b) engine gains a per-member **Roth bucket** — accounts need
+  a tax treatment split (tax_deferred | roth | taxable | hsa) beyond
+  today's single tax-deferred bucket; RMDs then apply only to the
+  tax-deferred side. Advisory framing per the product principle: the slider
+  is the owner's decision; the app may show "converting X/yr starting at
+  age Y keeps you in the Z% bracket" comparisons, never a recommendation.
+  Terminology note: while working at high income this is the literal
+  backdoor-Roth (nondeductible contribution + conversion); in low-bracket
+  years it's a conversion ladder — the slider models the latter; the former
+  is a contribution-flow detail we can add cheaply.
 - Sell-side optimization (advisory-only per DECISIONS product principle);
   requires tax lots.
 - Live account sync (SimpleFIN/Plaid) via SyncAdapter.

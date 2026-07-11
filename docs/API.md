@@ -194,6 +194,16 @@ accounts within ±4 days auto-pair silently; near-misses become candidates.
 occurrence amounts × 100) so the UI can segment true subscriptions (low
 variability) from spending habits like groceries (rulings 2026-07-11).
 
+Further rulings (2026-07-11, from T-008 flags):
+`POST /transfers/candidates/dismiss` `{transaction_ids: [a, b]}` → 204 —
+persists a dismissal tombstone (same mechanism as unpair tombstones) so the
+candidate never resurfaces; manual pairing of the two txns still allowed.
+`GET /transactions?uncategorized=1` excludes transfer-paired rows.
+`api_key_last4` is `null` when no key is set. `by_purpose` entries are
+`{input_tokens, output_tokens, est_cost_usd}`. `possibly_forgotten` is capped
+at `monthly_equivalent ≤ 100` (subscription-scale heuristic — a mortgage is
+recurring but not forgettable).
+
 Category rules (applied on import, priority asc, first match wins):
 
 `GET/POST /rules`, `PATCH/DELETE /rules/{id}` —
