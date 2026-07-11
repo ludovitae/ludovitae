@@ -54,6 +54,7 @@ export const qk = {
   transferCandidates: ['transfers', 'candidates'] as const,
   uncategorized: ['transactions', 'uncategorized'] as const,
   rules: ['rules'] as const,
+  importPresets: ['import', 'presets'] as const,
   aiSettings: ['ai', 'settings'] as const,
   aiUsage: (months: number) => ['ai', 'usage', months] as const,
 }
@@ -168,6 +169,15 @@ export function useUncategorized() {
 
 export function useRules() {
   return useQuery({ queryKey: qk.rules, queryFn: api.rules.list })
+}
+
+/** v1.2.2 (T-009): institution mapping presets for the import wizard. */
+export function useImportPresets() {
+  return useQuery({ queryKey: qk.importPresets, queryFn: api.import.presets })
+}
+
+export function useDeleteImportPreset() {
+  return useInvalidating((id: number) => api.import.removePreset(id), [qk.importPresets])
 }
 
 export function useAiSettings() {

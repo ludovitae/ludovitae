@@ -1,4 +1,6 @@
-/** Import wizard: drag-drop → column mapping preview → dedupe report. */
+/** Import wizard: drag-drop → column mapping preview → dedupe report.
+ * v1.2.2 (T-009): institution presets (auto-matched by header fingerprint),
+ * sign-convention confirm step, split debit/credit mapping. */
 
 import { useCallback, useMemo, useState } from 'react'
 import { api } from '@/api/client'
@@ -10,9 +12,9 @@ import { LIABILITY_TYPES } from '@/api/types'
 import { Button } from '@/components/Button'
 import { Card, CardHeader } from '@/components/Card'
 import { EmptyState } from '@/components/EmptyState'
-import { Field, Select, Toggle } from '@/components/Field'
+import { Field, Select, TextInput, Toggle } from '@/components/Field'
 import { Skeleton } from '@/components/Skeleton'
-import { IconCheck, IconUpload, IconX } from '@/components/icons'
+import { IconCheck, IconUpload, IconWarning, IconX } from '@/components/icons'
 import { formatMoney } from '@/lib/format'
 import { PageHeader } from '@/layout/AppShell'
 
@@ -251,11 +253,42 @@ function PreviewStep({
   const qc = useQueryClient()
   const isCsv = step.kind === 'csv'
   const csv = isCsv ? (step.preview as ImportPreviewCsv) : null
-  const [mapping, setMapping] = useState<Partial<CsvMapping>>(csv?.suggested_mapping ?? {})
+  const preset = csv?.matched_preset ?? null
+  const [usingPreset, setUsingPreset] = useState(preset !== null)
+  const [mapping, setMapping] = useState<Partial<CsvMapping>>(
+    preset?.mapping ?? csv?.suggested_mapping ?? {},
+  )
+  const [splitColumns, setSplitColumns] = useState(
+    !!((preset?.mapping ?? csv?.suggested_mapping)?.debit && (preset?.mapping ?? csv?.suggested_mapping)?.credit),
+  )
+  // sign confirm step: preset wins, then the hint pre-checks the box
+  const [flipSigns, setFlipSigns] = useState(
+    preset ? preset.flip_signs : (csv?.sign_hint?.looks_flipped ?? false),
+  )
+  const [presetName, setPresetName] = useState('')
   const [updateBalance, setUpdateBalance] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  const mappingComplete = !isCsv || (!!mapping.date && !!mapping.amount)
+  const mappingComplete =
+    !isCsv ||
+    (!!mapping.date && (splitColumns ? !!mapping.debit && !!mapping.credit : !!mapping.amount))
+
+  function detachPreset() {
+    setUsingPreset(false)
+    const suggested = csv?.suggested_mapping ?? {}
+    setMapping(suggested)
+    setSplitColumns(!!(suggested.debit && suggested.credit))
+    setFlipSigns(csv?.sign_hint?.looks_flipped ?? false)
+  }
+
+  function toggleSplit(on: boolean) {
+    setSplitColumns(on)
+    setMapping(
+      on
+        ? { ...mapping, amount: undefined }
+        : { ...mapping, debit: undefined, credit: undefined },
+    )
+  }
 
   async function commit() {
     setBusy(true)
@@ -266,10 +299,12 @@ function PreviewStep({
         step.accountId,
         isCsv ? (mapping as CsvMapping) : null,
         updateBalance,
+        { flipSigns: isCsv && flipSigns, savePreset: isCsv ? presetName : undefined },
       )
       void qc.invalidateQueries({ queryKey: qk.transactions(undefined) })
       void qc.invalidateQueries({ queryKey: qk.accounts })
       void qc.invalidateQueries({ queryKey: qk.dashboard })
+      void qc.invalidateQueries({ queryKey: qk.importPresets })
       onDone(result)
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Import failed.')
@@ -278,21 +313,56 @@ function PreviewStep({
     }
   }
 
+  const mappedFields: readonly (keyof CsvMapping)[] = splitColumns
+    ? (['date', 'debit', 'credit', 'payee', 'category'] as const)
+    : (['date', 'amount', 'payee', 'category'] as const)
+  const fieldLabels: Record<string, string> = {
+    date: 'Date',
+    amount: 'Amount',
+    debit: 'Debit (money out)',
+    credit: 'Credit (money in)',
+    payee: 'Payee / description',
+    category: 'Category',
+  }
+  const required = new Set(splitColumns ? ['date', 'debit', 'credit'] : ['date', 'amount'])
+
   return (
     <div className="flex flex-col gap-4">
+      {csv && preset && usingPreset ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-(--radius-s) border border-(--accent) bg-accent-soft px-3 py-2.5">
+          <p className="text-[13px] text-ink">
+            <IconCheck width={14} height={14} className="mr-1.5 inline text-accent" />
+            Using your <span className="font-semibold">{preset.name}</span> preset — columns
+            {preset.flip_signs ? ' and sign flip' : ''} filled in from last time.
+          </p>
+          <Button variant="ghost" size="sm" onClick={detachPreset}>
+            Don’t use the preset
+          </Button>
+        </div>
+      ) : null}
+
       {csv ? (
         <Card>
-          <CardHeader title="Map the columns" hint="We guessed from the headers — correct anything that looks off" />
+          <CardHeader
+            title="Map the columns"
+            hint="We guessed from the headers — correct anything that looks off"
+            action={
+              <label className="flex items-center gap-2 text-[12px] text-ink-2">
+                <Toggle checked={splitColumns} onChange={toggleSplit} label="Separate debit and credit columns" />
+                Separate debit / credit columns
+              </label>
+            }
+          />
           <div className="grid grid-cols-2 gap-3 px-5 pt-2 pb-4 md:grid-cols-4">
-            {(['date', 'amount', 'payee', 'category'] as const).map((field) => (
-              <Field key={field} label={field === 'payee' ? 'Payee / description' : field[0]!.toUpperCase() + field.slice(1)}>
+            {mappedFields.map((field) => (
+              <Field key={field} label={fieldLabels[field]!}>
                 {(id) => (
                   <Select
                     id={id}
                     value={mapping[field] ?? ''}
                     onChange={(e) => setMapping({ ...mapping, [field]: e.target.value || undefined })}
                   >
-                    <option value="">{field === 'date' || field === 'amount' ? 'Choose…' : '— skip —'}</option>
+                    <option value="">{required.has(field) ? 'Choose…' : '— skip —'}</option>
                     {csv.columns.map((c) => (
                       <option key={c} value={c}>
                         {c}
@@ -310,10 +380,9 @@ function PreviewStep({
                   {csv.columns.map((c) => (
                     <th key={c} className="px-4 py-2 font-medium whitespace-nowrap">
                       {c}
-                      {mapping.date === c ? <MapTag label="date" /> : null}
-                      {mapping.amount === c ? <MapTag label="amount" /> : null}
-                      {mapping.payee === c ? <MapTag label="payee" /> : null}
-                      {mapping.category === c ? <MapTag label="category" /> : null}
+                      {mappedFields.filter((f) => mapping[f] === c).map((f) => (
+                        <MapTag key={f} label={f} />
+                      ))}
                     </th>
                   ))}
                 </tr>
@@ -343,13 +412,53 @@ function PreviewStep({
         </Card>
       )}
 
+      {csv && csv.sign_hint && !splitColumns ? (
+        <div className="flex gap-2.5 rounded-(--radius-s) border border-(--warning) bg-warning/10 px-3 py-2.5">
+          <span className="mt-0.5 shrink-0 text-warning">
+            <IconWarning width={15} height={15} />
+          </span>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[12px] leading-relaxed text-ink-2">{csv.sign_hint.reason}</p>
+            <label className="flex items-center gap-2 text-[13px] font-medium text-ink">
+              <input
+                type="checkbox"
+                checked={flipSigns}
+                onChange={(e) => setFlipSigns(e.target.checked)}
+                className="size-4 accent-(--accent)"
+              />
+              Flip signs on import
+            </label>
+          </div>
+        </div>
+      ) : null}
+
       <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-          <label className="flex items-center gap-2.5 text-[13px] text-ink-2">
-            <Toggle checked={updateBalance} onChange={setUpdateBalance} label="Update account balance from import" />
-            Also update the account balance from this file
-          </label>
-          <div className="flex gap-2">
+        <div className="flex flex-col gap-3 px-5 py-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            {csv ? (
+              <Field
+                label="Save this mapping as a preset"
+                hint="Next time this institution's file is recognized automatically"
+              >
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    value={presetName}
+                    placeholder={usingPreset && preset ? `${preset.name} (already saved)` : 'e.g. Chase card'}
+                    onChange={(e) => setPresetName(e.target.value)}
+                    className="w-56"
+                  />
+                )}
+              </Field>
+            ) : (
+              <span />
+            )}
+            <label className="flex items-center gap-2.5 pb-1 text-[13px] text-ink-2">
+              <Toggle checked={updateBalance} onChange={setUpdateBalance} label="Update account balance from import" />
+              Also update the account balance from this file
+            </label>
+          </div>
+          <div className="flex justify-end gap-2 border-t border-edge pt-3">
             <Button variant="ghost" onClick={onBack}>
               <IconX width={14} height={14} /> Start over
             </Button>

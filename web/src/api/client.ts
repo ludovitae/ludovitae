@@ -28,6 +28,7 @@ import type {
   HouseholdMemberCreate,
   HouseholdMemberPatch,
   ImportCommitResult,
+  ImportPreset,
   ImportPreview,
   ObservedSpending,
   Profile,
@@ -262,6 +263,8 @@ export const api = {
       accountId: number,
       mapping: CsvMapping | null,
       updateBalance: boolean,
+      /* v1.2.2 (T-009): sign flip + preset save (upsert by fingerprint) */
+      opts: { flipSigns?: boolean; savePreset?: string } = {},
     ) => {
       const form = new FormData()
       form.set('file', file)
@@ -269,8 +272,13 @@ export const api = {
       form.set('account_id', String(accountId))
       if (mapping) form.set('mapping', JSON.stringify(mapping))
       form.set('update_balance', String(updateBalance))
+      if (opts.flipSigns) form.set('flip_signs', 'true')
+      if (opts.savePreset?.trim()) form.set('save_preset', opts.savePreset.trim())
       return request<ImportCommitResult>('POST', '/import/commit', { form })
     },
+    /* v1.2.2 (T-009): institution mapping presets */
+    presets: () => request<ImportPreset[]>('GET', '/import/presets'),
+    removePreset: (id: number) => request<void>('DELETE', `/import/presets/${id}`),
   },
 
   scenarios: {
