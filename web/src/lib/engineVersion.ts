@@ -8,6 +8,12 @@
  * loading the studio — the next engine-v2 response surfaces the note.
  */
 
+/** The engine version the app is built against — kept in lockstep with the
+ * server's `gol.ENGINE_VERSION`. The VITE_MOCK fixtures are generated from that
+ * same engine; a vitest guard asserts the committed fixtures still carry this
+ * version, so a server-side engine bump can't ship stale mock goldens. */
+export const ENGINE_VERSION = '2'
+
 const LAST_SEEN_KEY = 'gol.engine.lastSeen'
 const DISMISSED_KEY = 'gol.engine.dismissed'
 
