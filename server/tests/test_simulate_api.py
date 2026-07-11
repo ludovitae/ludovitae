@@ -36,8 +36,11 @@ def test_simulate_response_shape(authed):
     resp = authed.post("/api/v1/simulate", json={"scenario_id": 0, "seed": 42, "n_paths": 500})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["engine_version"] == "2"
-    assert body["engine_notes"] == ["Taxable Social Security capped at 85% (was 100%)"]
+    assert body["engine_version"] == "3"
+    assert len(body["engine_notes"]) == 2
+    assert all(isinstance(n, str) for n in body["engine_notes"])
+    assert "tax_model=brackets" in body["engine_notes"][0]
+    assert "tax_model=flat" in body["engine_notes"][1]
     assert body["n_paths"] == 500
     assert body["seed"] == 42
     assert set(body["percentiles"]) == {"p10", "p25", "p50", "p75", "p90"}
@@ -58,7 +61,8 @@ def test_simulate_response_shape(authed):
 
 def test_simulate_assumptions_reflect_inputs_used(authed):
     """T-011: the assumptions block reports what the run actually used —
-    profile knobs AND scenario param overrides — not re-read DB state."""
+    profile knobs AND scenario param overrides — not re-read DB state.
+    T-012: a set flat override selects tax_model 'flat' with the v2 fields."""
     _setup_plan(authed)
     authed.put(
         "/api/v1/profile",
@@ -73,9 +77,10 @@ def test_simulate_assumptions_reflect_inputs_used(authed):
                    "bonds_mean_pct": 3.5, "bonds_vol_pct": 7.0,
                    "cash_mean_pct": 1.5, "cash_vol_pct": 0.5},
         "inflation_pct": 2.5,
+        "tax_model": "flat",
         "effective_tax_rate_pct": 22.0,
         "ss_taxable_share": 0.85,
-        "engine_version": "2",
+        "engine_version": "3",
     }
     # scenario overrides flow into the assumptions (means overridden, vols kept)
     custom = authed.post(
@@ -90,6 +95,56 @@ def test_simulate_assumptions_reflect_inputs_used(authed):
     }
     assert custom["assumptions"]["inflation_pct"] == 3.1
     assert custom["assumptions"]["effective_tax_rate_pct"] == 22.0
+    assert custom["assumptions"]["tax_model"] == "flat"
+
+
+def test_simulate_assumptions_bracket_mode_and_filing_status(authed):
+    """T-012 phase 2: a null flat-tax override (fresh-profile default) runs
+    the bracket model; assumptions carry tax_model + filing_status and drop
+    the flat-mode fields. Filing status: mfj iff >= 2 members with role in
+    {self, partner}; `other` adults and children never make it mfj."""
+    _setup_plan(authed)  # fresh profile -> effective_tax_rate_pct null
+    body = authed.post(
+        "/api/v1/simulate", json={"scenario_id": 0, "seed": 7, "n_paths": 100}
+    ).json()
+    assert body["assumptions"]["tax_model"] == "brackets"
+    assert body["assumptions"]["filing_status"] == "single"
+    assert "effective_tax_rate_pct" not in body["assumptions"]
+    assert "ss_taxable_share" not in body["assumptions"]
+
+    # an `other` adult does NOT change the filing status (coordinator ruling)
+    authed.post(
+        "/api/v1/household",
+        json={"name": "Mom", "role": "other", "birth_year": 1955,
+              "life_expectancy": 95},
+    )
+    body = authed.post(
+        "/api/v1/simulate", json={"scenario_id": 0, "seed": 7, "n_paths": 100}
+    ).json()
+    assert body["assumptions"]["filing_status"] == "single"
+
+    # a partner does: self + partner -> mfj
+    authed.post(
+        "/api/v1/household",
+        json={"name": "Dana", "role": "partner", "birth_year": 1983,
+              "life_expectancy": 94},
+    )
+    body = authed.post(
+        "/api/v1/simulate", json={"scenario_id": 0, "seed": 7, "n_paths": 100}
+    ).json()
+    assert body["assumptions"]["filing_status"] == "mfj"
+
+
+def test_profile_flat_override_roundtrips_null(authed):
+    """The flat-tax knob is nullable (v1.2.2): null clears the override."""
+    prof = authed.get("/api/v1/profile").json()
+    assert prof["effective_tax_rate_pct"] is None  # fresh profiles: brackets
+    prof["effective_tax_rate_pct"] = 22.0
+    assert authed.put("/api/v1/profile", json=prof).json()[
+        "effective_tax_rate_pct"] == 22.0
+    prof["effective_tax_rate_pct"] = None
+    assert authed.put("/api/v1/profile", json=prof).json()[
+        "effective_tax_rate_pct"] is None
 
 
 def test_compare_results_carry_assumptions(authed):
@@ -105,9 +160,11 @@ def test_compare_results_carry_assumptions(authed):
     assert results[0]["assumptions"]["market"]["stocks_mean_pct"] == 7.0
     assert results[1]["assumptions"]["market"]["stocks_mean_pct"] == 4.0
     for r in results:
-        assert r["engine_version"] == "2"
-        assert r["engine_notes"] == ["Taxable Social Security capped at 85% (was 100%)"]
-        assert r["assumptions"]["ss_taxable_share"] == 0.85
+        assert r["engine_version"] == "3"
+        assert len(r["engine_notes"]) == 2
+        # fresh profile -> null override -> bracket mode
+        assert r["assumptions"]["tax_model"] == "brackets"
+        assert r["assumptions"]["filing_status"] == "single"
 
 
 def test_simulate_member_overrides_move_milestones(authed):

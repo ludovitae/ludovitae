@@ -76,10 +76,15 @@ describe('formatMoneyCompact boundaries (T-003)', () => {
     expect(formatMoneyCompact(0)).toBe('$0')
     expect(formatMoneyCompact(-0)).toBe('$0')
   })
-  it('rounds a near-million just under 1e6 to $1000K (documented boundary, F-002)', () => {
-    // cosmetic: 999_999 renders as $1000K rather than $1M — locked as current
-    // behavior; see T-003 log F-002.
-    expect(formatMoneyCompact(999_999)).toBe('$1000K')
+  it('promotes to the next unit when rounding reaches 1000 (#6, was F-002)', () => {
+    // A value that rounds to 1000 of the current unit must roll up to the next
+    // unit rather than render "$1000K"/"$1000M".
+    expect(formatMoneyCompact(999_499)).toBe('$999K') // rounds down, stays K
+    expect(formatMoneyCompact(999_500)).toBe('$1M') // rounds to 1000K → $1M
+    expect(formatMoneyCompact(999_999)).toBe('$1M')
+    expect(formatMoneyCompact(999_949_999)).toBe('$1B') // 999.95M → $1B
+    expect(formatMoneyCompact(999_499_999)).toBe('$999M') // rounds down, stays M
+    expect(formatMoneyCompact(-999_500)).toBe('-$1M') // promotion keeps the sign
   })
 })
 

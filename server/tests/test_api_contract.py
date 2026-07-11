@@ -76,7 +76,8 @@ GOAL_SPEC = {
 }
 PROFILE_SPEC = {
     "annual_retirement_spending": Num, "inflation_pct": Num,
-    "effective_tax_rate_pct": Num,
+    # v1.2.2 (T-012): nullable flat-tax override; null = bracket model
+    "effective_tax_rate_pct": (int, float, type(None)),
 }
 MEMBER_SPEC = {
     "id": int, "name": str, "role": str, "birth_year": int,
@@ -105,9 +106,16 @@ SIM_SPEC = {
     "success_probability": Num, "median_ruin_age": (int, float, type(None)),
     "ending_net_worth": dict, "milestones": list,
 }
-ASSUMPTIONS_SPEC = {
-    "market": dict, "inflation_pct": Num, "effective_tax_rate_pct": Num,
-    "ss_taxable_share": Num, "engine_version": str,
+# v1.2.2 (T-012): the assumptions block is mode-shaped by tax_model —
+# flat carries the v2 fields; brackets carries filing_status instead.
+ASSUMPTIONS_SPEC_FLAT = {
+    "market": dict, "inflation_pct": Num, "tax_model": str,
+    "effective_tax_rate_pct": Num, "ss_taxable_share": Num,
+    "engine_version": str,
+}
+ASSUMPTIONS_SPEC_BRACKETS = {
+    "market": dict, "inflation_pct": Num, "tax_model": str,
+    "filing_status": str, "engine_version": str,
 }
 ASSUMPTIONS_MARKET_SPEC = {
     "stocks_mean_pct": Num, "stocks_vol_pct": Num,
@@ -123,7 +131,12 @@ GOALS_SUMMARY_SPEC = {
 
 def _assert_sim_shape(body: dict, where: str) -> None:
     _assert_shape(body, SIM_SPEC, where)
-    _assert_shape(body["assumptions"], ASSUMPTIONS_SPEC, f"{where}.assumptions")
+    tax_model = body["assumptions"].get("tax_model")
+    assert tax_model in ("flat", "brackets"), f"{where}.assumptions.tax_model"
+    spec = ASSUMPTIONS_SPEC_FLAT if tax_model == "flat" else ASSUMPTIONS_SPEC_BRACKETS
+    _assert_shape(body["assumptions"], spec, f"{where}.assumptions")
+    if tax_model == "brackets":
+        assert body["assumptions"]["filing_status"] in ("single", "mfj")
     _assert_shape(
         body["assumptions"]["market"], ASSUMPTIONS_MARKET_SPEC,
         f"{where}.assumptions.market",

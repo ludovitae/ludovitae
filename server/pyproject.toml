@@ -32,6 +32,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gol"]
+# Bundle the built SPA into the wheel when present (#13). gol/_webdist is
+# .gitignored, so it must be force-included past the VCS-ignore default; the
+# glob is simply a no-op in an API-only build where the dir was never created.
+artifacts = ["src/gol/_webdist/**/*"]
 
 [tool.ruff]
 line-length = 100

@@ -247,3 +247,27 @@ def test_export_never_contains_the_ai_api_key(authed):
         assert db.execute(select(AiSettings)).scalar_one().api_key == secret
     finally:
         db.close()
+
+
+def test_export_redacts_all_credential_material(authed):
+    """SECURITY-REVIEW-v1.2 V1: the export must not carry credential material
+    (password hash, live session/CSRF tokens) — only null in the redacted
+    columns, while the table/column shape stays intact. Restore is file-level,
+    so these values serve no export purpose and only widen the blast radius of
+    a leaked export file."""
+    resp = authed.get("/api/v1/export")
+    assert resp.status_code == 200
+    tables = resp.json()["tables"]
+
+    (cred,) = tables["auth_credential"]
+    assert "password_hash" in cred and cred["password_hash"] is None
+    # the created_at metadata column is untouched (only secrets are nulled)
+    assert cred["created_at"] is not None
+
+    assert tables["auth_sessions"], "expected a live session row in the export"
+    for sess in tables["auth_sessions"]:
+        assert "token_hash" in sess and sess["token_hash"] is None
+        assert "csrf_token" in sess and sess["csrf_token"] is None
+
+    # No argon2 hash or session-token hex should appear anywhere in the body.
+    assert "$argon2id$" not in resp.text

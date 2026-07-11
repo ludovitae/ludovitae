@@ -1,9 +1,9 @@
 # Bracket-aware tax: design & integration plan (T-012)
 
-Status: phase 1 shipped (standalone `gol/tax/` module + this plan). Phase 2
-(engine integration) is a follow-up task that starts **after T-011a merges**,
-per the coordinator's sequencing. Nothing in this document changes engine
-behavior today.
+Status: phase 1 shipped (standalone `gol/tax/` module + this plan); phase 2
+(engine integration) shipped on `ws/tax-integration` (engine v3, v1.2.2) —
+§3-§4 implemented as specified (estimate + exact December settle-up), §5 and
+§6 resolved by coordinator rulings recorded below.
 
 Motivation: PM review 2026-07-11, finding 3 — the v1.1 timing features (SS
 claim-age sliders, RMD milestones) invite the owner to optimize decisions
@@ -135,24 +135,25 @@ inner loop, exact annual totals). Keep the closed-form inversion in the back
 pocket; adopt it only if validation shows the December true-up visibly
 distorting shortfall dynamics on thin-cash paths.
 
-## 5. Filing status derivation (propose only — not implemented)
+## 5. Filing status derivation (RESOLVED — coordinator ruling, phase 2)
 
-Derive from the household: **MFJ if ≥ 2 members with `role in ADULT_ROLES`
-(`self`, `partner`, `other`), else single.** Assembly computes it; the engine
-and `gol/tax` just receive the scalar string.
+**Ruling (implemented):** MFJ iff the household has ≥ 2 members with
+`role in {self, partner}`; else single. Role `other` **never** affects
+filing status — the phase-1 wrinkle (a resident parent is not a spouse; a
+`self`+`other` household files single + a dependent in reality) is resolved
+conservatively by adopting the recommended refinement rather than the
+≥2-adults default. Children never count. Assembly computes the status; the
+engine and `gol/tax` receive the scalar string, and bracket-mode simulate
+responses surface it as `assumptions.filing_status`.
 
-Open question for the coordinator: `other` adults (e.g. a resident parent)
-are not spouses; `partner` presence is the truer MFJ test, and a 2-adult
-`self`+`other` household would file single + a dependent in reality. Given
-the app models one filer per household, the ≥2-adults rule is proposed as
-the default for simplicity, with `self`+`partner` → MFJ, else single, as the
-recommended refinement if QA's golden households make the difference matter.
-Head-of-household is out of scope (statuses ship as data; adding it later is
-a table row + threshold pair).
+Head-of-household remains out of scope (statuses ship as data; adding it
+later is a table row + threshold pair).
 
-## 6. The `effective_tax_rate_pct` knob → optional override
+## 6. The `effective_tax_rate_pct` knob → optional override (RESOLVED)
 
-Proposal: the profile knob becomes **nullable**.
+Adopted as proposed (coordinator ruling, phase 2): the profile knob is
+**nullable** (migration 0005). `assumptions.tax_model` ships in v1.2.2 with
+engine v3 — see docs/API.md §Simulation for the exact contract.
 
 - `effective_tax_rate_pct = null` → bracket-aware model (new default for
   *new* profiles).

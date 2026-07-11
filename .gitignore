@@ -22,6 +22,9 @@ node_modules/
 dist/
 *.local
 
+# bundled web UI, copied into the wheel at build time (#13)
+server/src/gol/_webdist/
+
 # editors / os
 .DS_Store
 .idea/

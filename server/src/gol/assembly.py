@@ -104,6 +104,36 @@ def _cap_end(end: int | None, stop_month: int) -> int:
     return stop_month if end is None else min(end, stop_month)
 
 
+def validate_person_data(
+    birth_year: int, life_expectancy: int, today: dt.date | None = None
+) -> None:
+    """Write-time consistency check for a household member (#7).
+
+    Mirrors exactly the ``invalid_plan_horizon`` guard in ``build_plan_inputs``
+    (below), so degenerate person data is rejected at write time instead of
+    only when a simulation runs. The two conditions kept in sync:
+
+    * ``birth_year`` in the future — current age would be negative.
+    * ``life_expectancy`` below the member's current age — nothing to simulate.
+
+    Uses error code ``invalid_person_data``. ``retirement_age`` is deliberately
+    NOT checked here because the simulate-time guard only clamps it (never
+    rejects it). The guard stays in place as defense in depth.
+    """
+    today = today or dt.date.today()
+    current_age = today.year - birth_year
+    if current_age < 0:
+        raise ApiError(
+            422, "invalid_person_data",
+            "birth_year is in the future; current age must be non-negative",
+        )
+    if life_expectancy < current_age:
+        raise ApiError(
+            422, "invalid_person_data",
+            "life_expectancy is below current age; nothing to simulate",
+        )
+
+
 def build_plan_inputs(
     db: DbSession, params: dict | None = None, today: dt.date | None = None
 ) -> PlanInputs:
@@ -334,6 +364,12 @@ def build_plan_inputs(
 
     spending = params.get("annual_retirement_spending")
 
+    # Filing status (T-012 phase 2, coordinator ruling): MFJ iff >= 2 members
+    # with role in {self, partner}; `other` adults and children never affect
+    # filing status. Used only when effective_tax_rate_pct is null (brackets).
+    filers = sum(1 for m in members if m.role in ("self", "partner"))
+    filing_status = "mfj" if filers >= 2 else "single"
+
     return PlanInputs(
         start_age=start_age,
         start_year=start_year,
@@ -355,5 +391,6 @@ def build_plan_inputs(
         ),
         inflation_mean_pct=inflation_mean,
         effective_tax_rate_pct=profile.effective_tax_rate_pct,
+        filing_status=filing_status,
         market=market,
     )
