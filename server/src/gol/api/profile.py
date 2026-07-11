@@ -20,7 +20,9 @@ router = APIRouter(tags=["profile"])
 class ProfileBody(BaseModel):
     annual_retirement_spending: float = Field(ge=0)
     inflation_pct: float = Field(ge=-5, le=50)
-    effective_tax_rate_pct: float = Field(ge=0, le=100)
+    # Nullable flat-tax override (v1.2.2, T-012 phase 2): a value runs the
+    # flat-rate engine path; null (or omitted) runs the bracket-aware model.
+    effective_tax_rate_pct: float | None = Field(default=None, ge=0, le=100)
 
 
 def _serialize(profile: Profile) -> dict:
