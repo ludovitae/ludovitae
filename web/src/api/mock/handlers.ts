@@ -77,17 +77,11 @@ function baselineScenario(): Scenario {
   return { id: 0, name: 'Current trajectory', description: 'Your plan as entered — no changes.', is_baseline: true, params: {} }
 }
 
-function simulate(params: ScenarioParams, nPaths: number, seed: number) {
-  return runMockSim({
-    profile: db.profile,
-    household: db.household,
-    accounts: db.accounts,
-    flows: db.flows,
-    spending: db.spendingProfile,
-    params,
-    nPaths: Math.min(Math.max(nPaths, 100), 2000),
-    seed,
-  })
+/** #8: replays REAL-engine golden fixtures for the demo household (see
+ * mock/sim.ts). n_paths/seed are pinned into the fixtures, so the request's
+ * values no longer steer the dynamics. */
+function simulate(params: ScenarioParams) {
+  return runMockSim(params)
 }
 
 function scenarioById(id: number): Scenario {
@@ -878,7 +872,7 @@ async function route(
     const req = body as unknown as { scenario_ids: number[]; n_paths?: number; seed?: number }
     const results = req.scenario_ids.map((id) => {
       const s = scenarioById(id)
-      const sim = simulate(s.params, req.n_paths ?? 1000, req.seed ?? 42)
+      const sim = simulate(s.params)
       return { scenario_id: id, name: s.name, ...sim }
     })
     return { results } satisfies CompareResult
@@ -888,7 +882,7 @@ async function route(
   if (key === 'POST /simulate') {
     const req = body as unknown as SimulateRequest
     const params = 'scenario_id' in req ? scenarioById(req.scenario_id).params : req.params
-    return simulate(params, req.n_paths ?? 1000, req.seed ?? 42)
+    return simulate(params)
   }
 
   /* ---- dashboard & settings ---- */
