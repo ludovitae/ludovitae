@@ -6,7 +6,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from '@/App'
 
@@ -78,8 +78,16 @@ describe('import wizard account matching (#26, mock API)', () => {
     await user.click(screen.getByRole('button', { name: 'Import another file' }))
     await screen.findByLabelText('Into account', undefined, { timeout: 8000 })
     await user.upload(fileInput(), new File([OFX], 'statement2.ofx', { type: 'application/x-ofx' }))
-    const banner = await screen.findByText(/Matched ···6011/, undefined, { timeout: 8000 })
-    expect(banner.textContent).toContain('First National Checking')
+    // the banner renders immediately; its account name fills in once the
+    // accounts list refetch (invalidated by the create-commit) lands
+    await screen.findByText(/Matched ···6011/, undefined, { timeout: 8000 })
+    await waitFor(
+      () =>
+        expect(screen.getByText(/Matched ···6011/).textContent).toContain(
+          'First National Checking',
+        ),
+      { timeout: 8000 },
+    )
 
     // committing to the matched account dedupes everything
     await user.click(screen.getByRole('button', { name: 'Import transactions' }))
