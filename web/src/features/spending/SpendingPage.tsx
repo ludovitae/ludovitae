@@ -154,10 +154,15 @@ function PlanCard({
   onAdd: () => void
 }) {
   const update = useUpdateSpending()
+  // #31 interim slice (#29 scope): make the saving mechanism visible here —
+  // full observed-savings detection stays in #31.
+  const [addingContribution, setAddingContribution] = useState(false)
 
   const plannedTotal = spending.categories.reduce((s, c) => s + c.monthly_amount, 0)
   const expenseFlows = flows.filter((f) => f.kind === 'expense')
   const expenseFlowTotal = expenseFlows.reduce((s, f) => s + f.amount_monthly, 0)
+  const contributionFlows = flows.filter((f) => f.kind === 'contribution')
+  const contributionTotal = contributionFlows.reduce((s, f) => s + f.amount_monthly, 0)
 
   function putCategories(categories: SpendingCategory[], target = spending.monthly_savings_target) {
     update.mutate([{ categories, monthly_savings_target: target }])
@@ -246,13 +251,44 @@ function PlanCard({
           <div className="mt-3 flex items-center justify-between rounded-(--radius-s) bg-surface-2 px-3 py-2">
             <div>
               <p className="text-[13px] font-medium text-ink">Monthly savings target</p>
-              <p className="text-[11px] text-ink-3">Informational — actual saving comes from contribution flows</p>
+              <p className="text-[11px] text-ink-3">Informational — the simulation doesn&rsquo;t read this number</p>
             </div>
             <InlineAmount
               value={spending.monthly_savings_target}
               ariaLabel="Monthly savings target"
               onCommit={(v) => putCategories(spending.categories, v)}
             />
+          </div>
+
+          {/* quiet explainer, ink tones: the mechanism, not a warning */}
+          <div className="mt-2 rounded-(--radius-s) border border-edge px-3 py-2.5">
+            {contributionFlows.length > 0 ? (
+              <>
+                <p className="text-[12px] leading-relaxed text-ink-2">
+                  Saving in the simulation comes from contribution flows — currently{' '}
+                  <span className="num font-medium text-ink">{formatMoney(contributionTotal)}</span>
+                  /mo:
+                </p>
+                <ul className="mt-1.5 flex flex-col gap-0.5">
+                  {contributionFlows.map((f) => (
+                    <li key={f.id} className="flex items-baseline justify-between gap-3 text-[12px]">
+                      <span className="min-w-0 truncate text-ink-2">{f.name}</span>
+                      <span className="num shrink-0 text-ink-2">
+                        {formatMoney(f.amount_monthly)}
+                        <span className="text-ink-3">/mo</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="text-[12px] leading-relaxed text-ink-2">
+                No contribution flows yet — the simulation currently assumes no ongoing saving.
+              </p>
+            )}
+            <Button variant="ghost" size="sm" className="-ml-2 mt-1.5" onClick={() => setAddingContribution(true)}>
+              <IconPlus width={14} height={14} /> Add contribution flow
+            </Button>
           </div>
 
           {expenseFlows.length > 0 ? (
@@ -275,6 +311,9 @@ function PlanCard({
           ) : null}
         </div>
       )}
+      {addingContribution ? (
+        <FlowFormModal flow={null} initialKind="contribution" onClose={() => setAddingContribution(false)} />
+      ) : null}
     </Card>
   )
 }
@@ -615,7 +654,17 @@ const FLOW_KINDS: { value: Flow['kind']; label: string; hint: string }[] = [
   { value: 'contribution', label: 'Contribution', hint: 'Savings moved into an account' },
 ]
 
-function FlowFormModal({ flow, onClose }: { flow: Flow | null; onClose: () => void }) {
+function FlowFormModal({
+  flow,
+  initialKind,
+  onClose,
+}: {
+  flow: Flow | null
+  /** preset for creation entry points that know the kind (e.g. the Plan tab's
+   * contribution explainer) */
+  initialKind?: Flow['kind']
+  onClose: () => void
+}) {
   const create = useCreateFlow()
   const patch = usePatchFlow()
   const del = useDeleteFlow()
@@ -624,7 +673,7 @@ function FlowFormModal({ flow, onClose }: { flow: Flow | null; onClose: () => vo
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const [name, setName] = useState(flow?.name ?? '')
-  const [kind, setKind] = useState<Flow['kind']>(flow?.kind ?? 'income')
+  const [kind, setKind] = useState<Flow['kind']>(flow?.kind ?? initialKind ?? 'income')
   const [amount, setAmount] = useState(flow ? String(flow.amount_monthly) : '')
   const [growth, setGrowth] = useState(flow ? String(flow.annual_growth_pct) : '0')
   const [memberId, setMemberId] = useState<number | null>(flow?.member_id ?? null)
