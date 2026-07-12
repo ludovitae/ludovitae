@@ -28,6 +28,8 @@ export function StackedColumns({
   height = 240,
   ariaLabel,
   formatLabel = (l: string) => l,
+  onProbeChange,
+  onSelect,
 }: {
   labels: string[]
   /** bottom-to-top stack order */
@@ -35,10 +37,25 @@ export function StackedColumns({
   height?: number
   ariaLabel: string
   formatLabel?: (label: string) => string
+  /** transient hover/keyboard probe position (null when the probe leaves) */
+  onProbeChange?: (index: number | null) => void
+  /** Enter/Space on a probed column — persistent selection */
+  onSelect?: (index: number) => void
 }) {
   const [wrapRef, width] = useContainerWidth<HTMLDivElement>()
   const svgRef = useRef<SVGSVGElement>(null)
-  const [probe, setProbe] = useState<number | null>(null)
+  const [probe, setProbeState] = useState<number | null>(null)
+  const probeSent = useRef<number | null>(null)
+  const setProbe = useCallback(
+    (i: number | null) => {
+      setProbeState(i)
+      if (probeSent.current !== i) {
+        probeSent.current = i
+        onProbeChange?.(i)
+      }
+    },
+    [onProbeChange],
+  )
 
   const matrix = useTweenedMatrix(
     useMemo(() => series.map((s) => s.values), [series]),
@@ -73,10 +90,11 @@ export function StackedColumns({
       if (e.key === 'ArrowRight') setProbe(Math.min(n - 1, cur + 1))
       else if (e.key === 'ArrowLeft') setProbe(Math.max(0, cur - 1))
       else if (e.key === 'Escape') setProbe(null)
+      else if ((e.key === 'Enter' || e.key === ' ') && probe !== null) onSelect?.(probe)
       else return
       e.preventDefault()
     },
-    [probe, n],
+    [probe, n, setProbe, onSelect],
   )
 
   if (width === 0 || n === 0) return <div ref={wrapRef} style={{ height }} aria-hidden />
@@ -104,6 +122,10 @@ export function StackedColumns({
         viewBox={`0 0 ${width} ${height}`}
         onPointerMove={(e) => setProbe(idxFromClientX(e.clientX))}
         onPointerLeave={() => setProbe(null)}
+        onClick={(e) => {
+          const i = idxFromClientX(e.clientX)
+          if (i !== null) onSelect?.(i)
+        }}
       >
         {yTicks.map((t) => (
           <g key={t}>
