@@ -22,13 +22,18 @@ updated in the same commit that opens a version's tasks.
   model-honesty UI (assumptions strip, ~5% probabilities, what-moved notes),
   Ludovitae identity (MIT, GitHub org, CI, PyPI trusted publishing). See
   docs/releases/v1.2.1.md.
+- **v1.2.2** — field-tested against real money: import creates/matches
+  accounts with four built-in institution presets, cross-institution transfer
+  pairing proven on real data, start-from-scratch, per-account pages, forecast
+  explainability, container image + wheel-bundled UI, v1.2 security pass. See
+  docs/releases/v1.2.2.md.
 
 ## In flight
 
-- **Issue #4 (T-009 first real baseline)** — awaits owner exports in
-  data/first-mile/. **Issue #5 (bracket-tax phase 2)** — next engine work.
-  Package rename `gol`→`ludovitae` awaits the owner's issue. Board:
-  github.com/ludovitae/ludovitae/issues.
+- **v1.3.0 milestone** — income inference & equity grants; plan snapshots
+  (#21), healthcare/LTC modeling (#22). **Maiordomus v0** (butler pilot)
+  scheduled after v1.3. Package rename `gol`→`ludovitae` awaits the owner's
+  issue. Board: github.com/ludovitae/ludovitae/issues.
 
 ## Next (sequencing under owner review after the 2026-07-11 PM nemesis review)
 
