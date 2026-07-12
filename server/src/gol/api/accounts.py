@@ -90,6 +90,16 @@ def account_freshness(acc: Account, newest_txn: dt.date | None) -> tuple[str, in
     )
 
 
+def _serve_masked(acc: Account) -> str | None:
+    """#30 read-only external-link display field: null = never linked;
+    "···1234" = linked with digits captured at link time; accounts linked
+    before migration 0008 have hash-but-no-mask and serve the bare "···"
+    (linked, digits unknown — they self-heal on their next import)."""
+    if acc.external_account_id is None:
+        return None
+    return acc.external_account_masked or "···"
+
+
 def _serialize(acc: Account, newest_txn: dt.date | None) -> dict:
     freshness, _days = account_freshness(acc, newest_txn)
     return {
@@ -109,6 +119,7 @@ def _serialize(acc: Account, newest_txn: dt.date | None) -> dict:
         "staleness_days": acc.staleness_days,
         "track_freshness": acc.track_freshness,
         "freshness": freshness,
+        "external_account_masked": _serve_masked(acc),
     }
 
 

@@ -138,6 +138,13 @@ class Account(Base):
     external_account_id: Mapped[str | None] = mapped_column(
         String(64), nullable=True, index=True
     )
+    # v1.2.2 (#30, coordinator ruling): display form of the external link —
+    # "···" + last 4 of the raw id, captured AT LINK TIME alongside the hash
+    # (the hash is one-way, so this cannot be backfilled). Null on accounts
+    # linked before migration 0008; the serializer covers that case.
+    external_account_masked: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
 
     balances: Mapped[list[BalanceSnapshot]] = relationship(
         back_populates="account", cascade="all, delete-orphan", order_by="BalanceSnapshot.date"
