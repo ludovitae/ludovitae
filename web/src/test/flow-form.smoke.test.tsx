@@ -77,7 +77,9 @@ describe('flow form (mock API)', () => {
     const submit = dialog('Add flow').getByRole('button', { name: 'Add flow' }) as HTMLButtonElement
     expect(submit.disabled).toBe(false)
     await user.click(submit)
-    await screen.findByText('529 plan', undefined, { timeout: 8000 })
+    // #29: a new contribution shows in the flows table AND the Plan tab's
+    // saving explainer, so multiple matches are expected.
+    await screen.findAllByText('529 plan', undefined, { timeout: 8000 })
   }, 30000)
 
   it('edits and deletes a flow through the modal', async () => {
