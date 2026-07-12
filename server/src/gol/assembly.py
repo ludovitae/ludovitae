@@ -7,7 +7,10 @@ computed on the self member's month grid, retirement stops are baked into
 flow windows (owner's retirement for owned income/contributions, the
 household transition — last retirement — for expenses and unowned flows),
 and retirement-account contributions are routed to the account owner's
-tax-deferred bucket.
+tax-deferred (or Roth) sub-bucket by the account's resolved tax treatment
+(#25: tax_deferred | roth | taxable | hsa; Roth is excluded from the RMD base
+and from ``retirement_share``, so a Roth account gets no phantom RMDs and no
+phantom withdrawal tax).
 """
 
 from __future__ import annotations
@@ -207,29 +210,44 @@ def build_plan_inputs(
         return acc_member_id if acc_member_id in member_ids else self_member.id
 
     cash0 = invested0 = property0 = debt0 = 0.0
-    retirement_bal = 0.0
+    retirement_bal = 0.0  # tax-deferred only (#25) -> drives retirement_share
     tax_deferred0 = dict.fromkeys(member_ids, 0.0)
+    roth0 = dict.fromkeys(member_ids, 0.0)
     w_acc = [0.0, 0.0, 0.0]
     prop_growth_weighted = debt_growth_weighted = 0.0
     invested_by_id: dict[int, bool] = {}
     liability_by_id: dict[int, bool] = {}
-    account_owner: dict[int, int] = {}  # account id -> member id (retirement only)
+    # account id -> member id, for routing invested contributions to the
+    # owner's sub-bucket. Keyed by tax treatment (#25): tax-deferred accounts
+    # go in account_owner, Roth accounts in account_roth_owner.
+    account_owner: dict[int, int] = {}
+    account_roth_owner: dict[int, int] = {}
 
     for acc in accounts:
-        invested_by_id[acc.id] = acc.type in INVESTABLE_TYPES
+        investable = acc.type in INVESTABLE_TYPES
+        invested_by_id[acc.id] = investable
         liability_by_id[acc.id] = acc.type in LIABILITY_TYPES
-        if acc.type == "retirement":
+        # Route by resolved tax treatment (#25). For migrated data (no
+        # override) retirement -> tax_deferred, hsa -> hsa, brokerage ->
+        # taxable, so this reproduces the pre-#25 `type == "retirement"`
+        # routing exactly; Roth is reachable only by an explicit override.
+        treatment = acc.resolved_tax_treatment if investable else None
+        if treatment == "tax_deferred":
             account_owner[acc.id] = owner_id(acc.member_id)
+        elif treatment == "roth":
+            account_roth_owner[acc.id] = owner_id(acc.member_id)
         if not acc.include_in_net_worth:
             continue
         bal = acc.balance
         if acc.type in CASH_TYPES:
             cash0 += bal
-        elif acc.type in INVESTABLE_TYPES:
+        elif investable:
             invested0 += bal
-            if acc.type == "retirement":
+            if treatment == "tax_deferred":
                 retirement_bal += bal
                 tax_deferred0[owner_id(acc.member_id)] += bal
+            elif treatment == "roth":
+                roth0[owner_id(acc.member_id)] += bal
             weights = _CLASS_WEIGHTS.get(acc.asset_class, _CLASS_WEIGHTS[None])
             for i in range(3):
                 w_acc[i] += bal * weights[i]
@@ -285,11 +303,14 @@ def build_plan_inputs(
                 continue  # cash->cash / property transfers are net-worth no-ops
             if flow.ends_at_retirement:
                 end = _cap_end(end, member_stop_month(flow.member_id))
-            td_member = None
+            td_member = roth_member = None
             if kind == CONTRIB_INVESTED and flow.account_id in account_owner:
                 td_member = member_index[account_owner[flow.account_id]]
+            elif kind == CONTRIB_INVESTED and flow.account_id in account_roth_owner:
+                roth_member = member_index[account_roth_owner[flow.account_id]]
             specs.append(FlowSpec(kind, flow.amount_monthly, flow.annual_growth_pct,
-                                  start, end, td_member=td_member))
+                                  start, end, td_member=td_member,
+                                  roth_member=roth_member))
 
     # Spending categories are expense streams; null growth -> the (effective)
     # inflation assumption. They stop at the household retirement transition.
@@ -357,6 +378,7 @@ def build_plan_inputs(
             ss_start_month=ss_start_month,
             ss_claim_age=claim,
             tax_deferred0=tax_deferred0[m.id],
+            roth0=roth0[m.id],
             rmd_start_month=(
                 rmd_start_age(m.birth_year) * 12 - age0[m.id] if is_adult else None
             ),
