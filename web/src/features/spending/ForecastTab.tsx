@@ -1,24 +1,35 @@
 /** Spending → Forecast: stacked recurring + variable projection from
  * /spending/forecast. Two-series stack (slots 1+2, dataviz-validated both
  * modes); the legend + per-series stat line under the chart is the visible
- * relief for the light-mode slot-2 contrast WARN. */
+ * relief for the light-mode slot-2 contrast WARN.
+ *
+ * #29: the chart card also carries a per-month component breakdown (chip
+ * selection + chart-probe preview) and the "how this is computed" strip —
+ * both joined client-side from /spending/forecast + /spending/recurring
+ * (see ./forecastView.ts). */
 
-import { useSpendingForecast } from '@/api/queries'
+import { useMemo, useState } from 'react'
+import { useSpendingForecast, useSpendingRecurring } from '@/api/queries'
 import { Card, CardHeader } from '@/components/Card'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/Skeleton'
 import { StackedColumns } from '@/charts/StackedColumns'
 import { formatMoney } from '@/lib/format'
-
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-function shortMonth(key: string): string {
-  const m = MONTHS_SHORT[Number(key.slice(5, 7)) - 1] ?? key
-  return m === 'Jan' ? `${m} ’${key.slice(2, 4)}` : m
-}
+import { ForecastExplain, MonthBreakdown } from './ForecastExplain'
+import { buildForecastView, shortMonthKey } from './forecastView'
 
 export function ForecastTab() {
   const forecast = useSpendingForecast(12)
+  const recurring = useSpendingRecurring()
+  // #29 per-month breakdown: persistent selection (chips / click / Enter on
+  // the chart) + the chart's transient probe previewing without moving it.
+  const [selected, setSelected] = useState(0)
+  const [probe, setProbe] = useState<number | null>(null)
+
+  const view = useMemo(
+    () => (forecast.data && recurring.data ? buildForecastView(forecast.data, recurring.data) : null),
+    [forecast.data, recurring.data],
+  )
 
   if (forecast.isPending) return <Skeleton className="h-96" />
   const data = forecast.data
@@ -77,7 +88,9 @@ export function ForecastTab() {
             ]}
             height={260}
             ariaLabel="Twelve-month spending forecast, recurring plus variable"
-            formatLabel={shortMonth}
+            formatLabel={shortMonthKey}
+            onProbeChange={setProbe}
+            onSelect={setSelected}
           />
         </div>
         {/* visible per-series values (contrast relief; tooltips only enhance) */}
@@ -88,6 +101,12 @@ export function ForecastTab() {
           <span className="num font-semibold text-ink">{formatMoney(recurringAvg + variableMonthly)}</span>/mo —{' '}
           <span className="num">{formatMoney((recurringAvg + variableMonthly) * 12)}</span> over the year.
         </p>
+        {view ? (
+          <>
+            <MonthBreakdown view={view} forecast={data} selected={selected} probe={probe} onSelect={setSelected} />
+            <ForecastExplain view={view} />
+          </>
+        ) : null}
       </Card>
 
       <Card>
