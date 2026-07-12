@@ -619,3 +619,100 @@ Write-time person validation (v1.2.2, #7): `POST /household` and
 below current age with 422 `invalid_person_data` (mirrors the simulate-time
 `invalid_plan_horizon` conditions; that guard remains as defense in depth).
 `retirement_age` is clamped, never rejected, in both places.
+
+## Plan snapshots & tracking (v1.3, #21)
+
+A **PlanSnapshot** is a frozen, named record of a simulation captured at a
+moment in time — the full `/simulate` response (deterministic path,
+percentiles, assumptions, `engine_version`, `ages`, `start_year`) plus a
+copy of the inputs summary it consumed. **Immutable after creation**: engine
+upgrades never touch an existing snapshot (the plan you made in 2026 stays
+the plan you made in 2026). At most one snapshot is the active `is_benchmark`
+comparison line (exactly zero-or-one across all snapshots).
+
+`GET /plans` — list, **metadata only** (never the full arrays):
+
+```json
+[{"id": 1, "name": "2026 plan", "created_at": "2026-07-12T14:00:00",
+  "engine_version": "3", "is_benchmark": true, "scenario_id": null,
+  "captured_net_worth": 812000.0, "monthly_spending": 5240.0,
+  "monthly_saving": 3600.0, "start_year": 2026, "horizon_end_year": 2072}]
+```
+
+`POST /plans/snapshot` — `{name, scenario_id?}` **or** `{name, params?}`
+(exactly one of `scenario_id`/`params`, else 400 `bad_request`; neither runs
+the baseline). Runs a simulation now (`n_paths` default 1000, optional
+`seed`), freezes it, and returns **201** with the full snapshot (below). The
+first snapshot created is auto-flagged `is_benchmark`.
+
+`GET /plans/{id}` — full snapshot (404 `plan_not_found`):
+
+```json
+{"id": 1, "name": "2026 plan", "created_at": "2026-07-12T14:00:00",
+ "engine_version": "3", "is_benchmark": true, "scenario_id": null,
+ "captured_net_worth": 812000.0, "monthly_spending": 5240.0,
+ "monthly_saving": 3600.0, "start_year": 2026, "horizon_end_year": 2072,
+ "response": { <the frozen /simulate response> },
+ "inputs_summary": {"net_worth": 812000.0, "monthly_spending": 5240.0,
+   "monthly_saving": 3600.0, "annual_retirement_spending": 80000.0,
+   "inflation_pct": 2.5, "scenario_id": null, "params": {...}}}
+```
+
+`DELETE /plans/{id}` → 204 (404 `plan_not_found`).
+
+`PATCH /plans/{id}` — `{is_benchmark: bool}`. Setting `true` atomically clears
+the flag on every other snapshot (zero-or-one invariant); setting `false`
+just clears this one. Returns the updated full snapshot.
+
+`GET /plans/{id}/tracking?metric=net_worth|spending|saving` (default
+`net_worth`; bad metric → 422 `validation_error`):
+
+```json
+{"metric": "net_worth",
+ "plan": [{"date": "2026-12-31", "value": 848000.0}, ...],
+ "actual": [{"date": "2026-07-31", "value": 815000.0}, ...],
+ "band": {"p25": [{"date": "2026-12-31", "value": 795000.0}, ...],
+          "p75": [{"date": "2026-12-31", "value": 910000.0}, ...]} ,
+ "delta_now": 12400.0,
+ "status": "ahead"}
+```
+
+- **Plan line.** `net_worth`: the snapshot's frozen deterministic `net_worth`
+  array, dated at the **year-end (Dec 31)** of `start_year + k` (the engine
+  samples year-ends). `spending`/`saving`: a **flat monthly rate** — the
+  captured `monthly_spending` / `monthly_saving` — emitted once per tracked
+  month (constant nominal; documented v1 simplification, no inflation growth
+  over the short tracking window).
+- **Actual line**, monthly from the snapshot's `created_at` month through the
+  current month:
+  - `net_worth`: month-end net worth reconstructed from balance snapshots
+    (latest balance on-or-before each month-end; liabilities negative) —
+    same carry-forward as `GET /dashboard` history.
+  - `spending`: monthly sum of outflows (`amount < 0`), excluding
+    transfer-paired rows and the `transfer` / `investment-activity` category
+    fallbacks (same exclusion family as `/spending/*`).
+  - `saving`: monthly sum of **positive** transactions posted into
+    investment-type accounts (`brokerage|retirement|hsa`) — contributions
+    routed into the invested pile. (Reinvested dividends are a known v1
+    over-count; income inference refines this later.)
+- **`band`.** `net_worth` only: the frozen `p25`/`p75` percentile arrays on
+  the same year-end dates — the "normal range." `null` for `spending`/`saving`
+  (the sim emits no percentile band for flows).
+- **`delta_now`.** `actual_now − plan_now`, where `plan_now` is the plan line
+  linearly interpolated at the latest actual date. Signed in the metric's
+  units ($ for net_worth, $/mo for spending/saving). `null` when there is no
+  actual data yet (empty `actual`).
+- **`status`** — polarity-aware (net_worth/saving: higher is better;
+  spending: higher is worse):
+  - `net_worth`: `ahead` when at/above plan; `within_normal_range` when below
+    plan but at/above the interpolated `p25` band (**model honesty — normal
+    market variance is not "behind"**); `behind` when below `p25`.
+  - `saving`: `ahead` / `behind` / `on_track` (within ±2% of plan).
+  - `spending`: `behind` when over plan by >2%, `ahead` when under by >2%,
+    else `on_track`.
+  - `null` status when `delta_now` is `null`.
+
+`GET /dashboard` gains `"benchmark": {plan_id, name, metric: "net_worth",
+delta_now, status} | null` — the active benchmark's net-worth delta for the
+dashboard stat (`null` when no snapshot is flagged). One surface, no badge
+(attention rules).

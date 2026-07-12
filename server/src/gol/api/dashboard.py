@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from gol.api.accounts import account_freshness, newest_txn_dates
 from gol.api.common import Db, iso
+from gol.api.plans import benchmark_summary
 from gol.auth.deps import Authenticated
 from gol.models import LIABILITY_TYPES, Account, Flow, Goal, SpendingCategory
 
@@ -104,4 +105,5 @@ def dashboard(db: Db, _: Authenticated):
         "goals_summary": goals_summary,
         "monthly_surplus": round(surplus, 2),
         "stale_accounts": stale_accounts,
+        "benchmark": benchmark_summary(db),
     }

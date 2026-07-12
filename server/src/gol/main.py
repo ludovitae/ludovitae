@@ -71,6 +71,7 @@ def create_app() -> FastAPI:
         goals,
         household,
         importer,
+        plans,
         profile,
         rules,
         scenarios,
@@ -86,8 +87,8 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix=prefix)
     for module in (
         profile, household, spending, spending_analytics, accounts, flows,
-        goals, transactions, transfers, rules, scenarios, simulate, dashboard,
-        settings, ai_admin, importer, export, admin,
+        goals, transactions, transfers, rules, scenarios, simulate, plans,
+        dashboard, settings, ai_admin, importer, export, admin,
     ):
         app.include_router(module.router, prefix=prefix)
 
