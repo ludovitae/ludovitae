@@ -451,6 +451,7 @@ function createImportAccount(payload: NewAccountPayload): Account {
     staleness_days: null,
     track_freshness: db.TRACK_FRESHNESS_DEFAULT.includes(payload.type),
     freshness: 'never',
+    external_account_masked: null,
   }
   db.accounts.push(a)
   db.balances.set(a.id, [{ date: todayISO(), amount: 0 }])
@@ -615,21 +616,28 @@ async function importCommit(form: FormData): Promise<ImportCommitResult> {
     const resolved = new Map<string, { account: Account; created: boolean }>()
     const unknown: string[] = []
     for (const key of order) {
+      const masked = groups.get(key)![0]!.accountMasked
       const entry = accountMap[key]
       if (entry && 'account_id' in entry) {
         const acc = db.accounts.find((a) => a.id === entry.account_id)
         if (!acc) notFound('account')
         db.externalLinks.set(key, acc.id)
+        acc.external_account_masked = masked // #30: captured at link time
         resolved.set(key, { account: acc, created: false })
       } else if (entry && 'new_account' in entry) {
         const acc = createImportAccount(entry.new_account)
         db.externalLinks.set(key, acc.id)
+        acc.external_account_masked = masked
         resolved.set(key, { account: acc, created: true })
       } else {
         const linked = db.externalLinks.get(key)
         const acc = db.accounts.find((a) => a.id === linked)
-        if (acc) resolved.set(key, { account: acc, created: false })
-        else unknown.push(groups.get(key)![0]!.accountMasked ?? key)
+        if (acc) {
+          // #30 self-heal: pre-mask links pick up their digits on re-import
+          if (acc.external_account_masked === null || acc.external_account_masked === '···')
+            acc.external_account_masked = masked
+          resolved.set(key, { account: acc, created: false })
+        } else unknown.push(masked ?? key)
       }
     }
     if (unknown.length > 0)
@@ -668,8 +676,15 @@ async function importCommit(form: FormData): Promise<ImportCommitResult> {
     account = db.accounts.find((a) => a.id === Number(accountIdRaw)) ?? notFound('account')
   }
 
-  // #26: hashed external-account link for OFX (last-write-wins)
-  if (ofxAcctid) db.externalLinks.set(db.externalIdHash(ofxAcctid), account.id)
+  // #26: hashed external-account link for OFX (last-write-wins);
+  // #30: display mask captured alongside — a collision move clears the loser
+  if (ofxAcctid) {
+    const key = db.externalIdHash(ofxAcctid)
+    const prev = db.accounts.find((a) => a.id === db.externalLinks.get(key))
+    if (prev && prev.id !== account.id) prev.external_account_masked = null
+    db.externalLinks.set(key, account.id)
+    account.external_account_masked = `···${ofxAcctid.slice(-4)}`
+  }
 
   const { imported, skipped } = importRowsInto(account, rows)
 
@@ -863,6 +878,7 @@ async function route(
       freshness: 'never',
       ...(body as object),
       type,
+      external_account_masked: null, // read-only: only linking sets it (#30)
     }
     db.accounts.push(a)
     db.balances.set(a.id, [{ date: todayISO(), amount: a.balance }])
@@ -879,7 +895,8 @@ async function route(
     if (method === 'PATCH') {
       const patch = body as Partial<Account>
       if (typeof patch.balance === 'number') setBalance(acct, patch.balance)
-      const { balance: _b, freshness: _f, ...rest } = patch
+      // freshness is computed, the external-link mask is read-only (#30)
+      const { balance: _b, freshness: _f, external_account_masked: _m, ...rest } = patch
       return serveAccount(Object.assign(acct, rest))
     }
   }

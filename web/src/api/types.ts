@@ -97,11 +97,20 @@ export interface Account {
   /** default false for property/vehicle/other, true for cash/card/investment */
   track_freshness: boolean
   freshness: Freshness
+  /** v1.2.2 (#30, read-only): external-link display mask. null = never
+   * linked; "···1234" = linked with digits captured at link time; the bare
+   * "···" = linked before mask capture existed (digits unknown). */
+  external_account_masked: string | null
 }
 
 export type AccountCreate = Omit<
   Account,
-  'id' | 'created_at' | 'last_import_at' | 'newest_transaction_date' | 'freshness'
+  | 'id'
+  | 'created_at'
+  | 'last_import_at'
+  | 'newest_transaction_date'
+  | 'freshness'
+  | 'external_account_masked'
 >
 export type AccountPatch = Partial<AccountCreate>
 

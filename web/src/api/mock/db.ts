@@ -100,6 +100,7 @@ function acc(
     staleness_days: null,
     track_freshness: TRACK_FRESHNESS_DEFAULT.includes(type),
     freshness: 'never', // storage default; served value is computed per request
+    external_account_masked: null,
   }
 }
 
@@ -474,6 +475,23 @@ function fnv(material: string): string {
  * stores these on the account row; a side map keeps the mock simple. */
 export const externalLinks = new Map<string, number>()
 
+/** #30 demo external-link states: the brokerage is auto-matched with digits
+ * captured at link time; the savings account is a pre-0008 "legacy" link —
+ * hash but no digits, served as the bare "···". Fake numbers, obviously. */
+const DEMO_LINKS: { accountId: number; rawNumber: string | null; masked: string }[] = [
+  { accountId: 3, rawNumber: '20984821', masked: '···4821' },
+  { accountId: 2, rawNumber: 'ally-hys-3377', masked: '···' },
+]
+
+export function seedExternalLinks(): void {
+  for (const link of DEMO_LINKS) {
+    if (link.rawNumber) externalLinks.set(externalIdHash(link.rawNumber), link.accountId)
+    const account = accounts.find((a) => a.id === link.accountId)
+    if (account) account.external_account_masked = link.masked
+  }
+}
+seedExternalLinks()
+
 const BUILTIN_PRESET_SPECS: { name: string; columns: string[]; mapping: ImportPreset['mapping']; flip_signs: boolean }[] = [
   {
     name: 'Fidelity — Accounts History',
@@ -570,6 +588,7 @@ export function resetDb(mode: 'demo' | 'empty'): void {
   replaceArray(importPresets, builtinPresets())
   if (mode === 'demo') {
     const snap = structuredClone(initialState)
+    seedExternalLinks() // demo accounts keep their external-link fixtures
     Object.assign(profile, snap.profile)
     replaceArray(household, snap.household)
     replaceArray(accounts, snap.accounts)
