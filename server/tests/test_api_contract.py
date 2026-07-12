@@ -40,6 +40,8 @@ ACCOUNT_SPEC = {
     "newest_transaction_date": (str, type(None)),
     "staleness_days": (int, type(None)), "track_freshness": bool,
     "freshness": str,
+    # v1.2.2 (#30): read-only external-link display mask
+    "external_account_masked": (str, type(None)),
 }
 TXN_SPEC = {
     "id": int, "account_id": int, "date": str, "amount": Num, "payee": str,

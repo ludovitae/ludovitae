@@ -128,9 +128,11 @@ def _create_account(db, body: NewAccountBody) -> Account:
     return acc
 
 
-def _link_external(db, account: Account, digest: str) -> None:
+def _link_external(db, account: Account, digest: str, masked: str) -> None:
     """Upsert the hashed external-account link — last-write-wins; a collision
-    moves the link off the previous holder (logged, ids only)."""
+    moves the link off the previous holder (logged, ids only). #30: the
+    display mask (···last-4) is captured alongside the hash — the hash is
+    one-way, so link time is the only chance to remember the digits."""
     other = db.execute(
         select(Account).where(
             Account.external_account_id == digest, Account.id != account.id
@@ -142,7 +144,9 @@ def _link_external(db, account: Account, digest: str) -> None:
             other.id, account.id,
         )
         other.external_account_id = None
+        other.external_account_masked = None
     account.external_account_id = digest
+    account.external_account_masked = masked
 
 
 def _account_by_external_id(db, digest: str) -> Account | None:
@@ -335,7 +339,7 @@ def _import_into(db, account: Account, parsed: list[ParsedTransaction], rules) -
 
 
 def _resolve_group_account(
-    db, digest: str, name: str | None, account_map: dict
+    db, digest: str, name: str | None, masked: str, account_map: dict
 ) -> tuple[Account, bool]:
     """Resolution order per group (#26): explicit account_map entry ->
     hashed-id match -> unknown (caller collects for the 422)."""
@@ -345,11 +349,11 @@ def _resolve_group_account(
             raise ApiError(422, "validation_error", "account_map entries must be objects")
         if "account_id" in entry:
             acc = get_or_404(db, Account, entry["account_id"], "account_not_found")
-            _link_external(db, acc, digest)
+            _link_external(db, acc, digest, masked)
             return acc, False
         if "new_account" in entry:
             acc = _create_account(db, _validate_new_account(entry["new_account"]))
-            _link_external(db, acc, digest)
+            _link_external(db, acc, digest, masked)
             return acc, True
         raise ApiError(
             422, "validation_error",
@@ -358,6 +362,10 @@ def _resolve_group_account(
     match = _account_by_external_id(db, digest)
     if match is None:
         raise _UnknownAccount(name)
+    # #30 self-heal: accounts linked before migration 0008 have a hash but no
+    # mask — this import knows the raw number, so capture the digits now.
+    if match.external_account_masked is None:
+        match.external_account_masked = masked
     return match, False
 
 
@@ -396,7 +404,7 @@ def _commit_multi_account(
     for digest in order:
         try:
             resolved[digest] = _resolve_group_account(
-                db, digest, groups[digest]["name"], account_map
+                db, digest, groups[digest]["name"], groups[digest]["masked"], account_map
             )
         except _UnknownAccount:
             unknown.append(groups[digest]["masked"])
@@ -500,9 +508,10 @@ async def import_commit(
     else:
         account = get_or_404(db, Account, account_id, "account_not_found")
 
-    # #26: hashed external-account link for OFX (upsert, last-write-wins)
+    # #26: hashed external-account link for OFX (upsert, last-write-wins);
+    # #30: the display mask is captured alongside the hash
     if acctid:
-        _link_external(db, account, hash_external_id(acctid))
+        _link_external(db, account, hash_external_id(acctid), mask_external_id(acctid))
 
     imported, skipped = _import_into(db, account, parsed, rules)
 

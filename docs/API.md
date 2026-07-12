@@ -94,9 +94,17 @@ tax-deferred balances use the `self` member for RMD timing.
   "institution": "Vanguard", "balance": 250000.0,
   "growth_rate_pct": null, "asset_class": "stocks",
   "member_id": 1,
-  "include_in_net_worth": true, "notes": "", "created_at": "2026-07-10"
+  "include_in_net_worth": true, "notes": "", "created_at": "2026-07-10",
+  "external_account_masked": "···1234"
 }
 ```
+
+`external_account_masked` (v1.2.2, #30 — coordinator-ruled): **read-only**
+display form of the hashed external-account link — `"···"` + last 4 of the
+raw provider id, captured at link time alongside the hash (migration 0008).
+`null` = never linked. Accounts linked before 0008 have hash-but-no-mask and
+serve the bare `"···"` (linked, digits unknown); their mask self-heals on the
+next import commit that matches them. Never accepted on POST/PATCH.
 
 `type`: `checking|savings|brokerage|retirement|hsa|property|vehicle|other_asset|mortgage|loan|credit_card|other_liability`.
 `asset_class` (investable accounts): `stocks|bonds|cash|mixed` — drives Monte
@@ -342,7 +350,10 @@ Accounts gain a stored **hashed external-account link**: nullable
 `external_account_id` = sha256 of the raw provider account id (OFX `ACCTID`
 or a CSV account-number cell) — the raw id is never stored. Set on import
 commit for the target account (upsert; last-write-wins — a collision moves
-the link and logs a server warning). Not exposed on the Account resource.
+the link and logs a server warning). The hash itself is not exposed on the
+Account resource; v1.2.2 #30 exposes the read-only display mask
+`external_account_masked` (see Accounts), which the importer captures
+wherever it sets the hash (a collision move clears both on the loser).
 Migration 0007.
 
 `POST /import/preview`: `account_id` becomes **optional** (the create-new
