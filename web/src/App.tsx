@@ -16,6 +16,7 @@ import { LoginPage, SetupPage } from '@/features/auth/AuthScreens'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { HouseholdPage } from '@/features/household/HouseholdPage'
 import { AccountsPage } from '@/features/accounts/AccountsPage'
+import { AccountDetailPage } from '@/features/accounts/AccountDetailPage'
 import { SpendingPage } from '@/features/spending/SpendingPage'
 import { ScenariosPage } from '@/features/scenarios/ScenariosPage'
 import { GoalsPage } from '@/features/goals/GoalsPage'
@@ -79,6 +80,7 @@ const router = createBrowserRouter([
           { path: '/', element: <DashboardPage /> },
           { path: '/household', element: <HouseholdPage /> },
           { path: '/accounts', element: <AccountsPage /> },
+          { path: '/accounts/:id', element: <AccountDetailPage /> },
           { path: '/spending', element: <SpendingPage /> },
           { path: '/scenarios', element: <ScenariosPage /> },
           { path: '/goals', element: <GoalsPage /> },

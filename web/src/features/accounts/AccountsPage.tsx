@@ -1,18 +1,15 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   useAccounts,
-  useAddBalance,
-  useBalances,
   useCreateAccount,
   useDeleteAccount,
-  useDeleteBalance,
   useHousehold,
   usePatchAccount,
 } from '@/api/queries'
 import type { Account, AccountCreate, AccountType, AssetClass } from '@/api/types'
 import { ACCOUNT_TYPES, FRESHNESS_TRACKED_TYPES, INVESTABLE_TYPES, LIABILITY_TYPES } from '@/api/types'
-import { AreaChart } from '@/charts/AreaChart'
 import { Button } from '@/components/Button'
 import { Card } from '@/components/Card'
 import { EmptyState } from '@/components/EmptyState'
@@ -21,24 +18,11 @@ import { FreshnessBadgeButton } from '@/components/FreshnessBadge'
 import { Drawer, Modal } from '@/components/Overlay'
 import { Skeleton } from '@/components/Skeleton'
 import { IconHistory, IconPlus, IconTrash, TYPE_ICONS } from '@/components/icons'
-import { formatDate, formatMoney, todayISO } from '@/lib/format'
+import { formatMoney, todayISO } from '@/lib/format'
 import { daysSince } from '@/lib/freshness'
 import { PageHeader } from '@/layout/AppShell'
-
-const TYPE_LABELS: Record<AccountType, string> = {
-  checking: 'Checking',
-  savings: 'Savings',
-  brokerage: 'Brokerage',
-  retirement: 'Retirement',
-  hsa: 'HSA',
-  property: 'Property',
-  vehicle: 'Vehicle',
-  other_asset: 'Other asset',
-  mortgage: 'Mortgage',
-  loan: 'Loan',
-  credit_card: 'Credit card',
-  other_liability: 'Other liability',
-}
+import { BalanceHistoryPanel } from './BalanceHistoryPanel'
+import { TYPE_LABELS } from './accountLabels'
 
 export function AccountsPage() {
   const { data: accounts, isPending } = useAccounts()
@@ -146,14 +130,33 @@ function AccountRow({
 }) {
   const Icon = TYPE_ICONS[account.type] ?? TYPE_ICONS.other_asset!
   const del = useDeleteAccount()
+  const navigate = useNavigate()
   const [confirming, setConfirming] = useState(false)
+  // #30: the row opens the account detail page. Inline balance edit, the
+  // freshness popover and the row actions stay on the table — they stop
+  // propagation so using them never navigates.
   return (
-    <li className="group flex items-center gap-4 px-4 py-3">
+    <li
+      className="group flex cursor-pointer items-center gap-4 px-4 py-3 transition-colors duration-150 hover:bg-surface-2/60"
+      onClick={() => navigate(`/accounts/${account.id}`)}
+    >
       <span className="grid size-9 shrink-0 place-items-center rounded-(--radius-s) bg-surface-2 text-ink-2">
         <Icon />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-ink">{account.name}</p>
+        <p className="truncate text-sm font-medium text-ink">
+          <a
+            href={`/accounts/${account.id}`}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              navigate(`/accounts/${account.id}`)
+            }}
+            className="rounded-xs outline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-(--accent)"
+          >
+            {account.name}
+          </a>
+        </p>
         <p className="truncate text-xs text-ink-3">
           {TYPE_LABELS[account.type]}
           {owner ? ` · ${owner}` : ''}
@@ -162,9 +165,18 @@ function AccountRow({
           {account.growth_rate_pct !== null ? ` · ${account.growth_rate_pct > 0 ? '+' : ''}${account.growth_rate_pct}%/yr` : ''}
         </p>
       </div>
-      {account.freshness !== 'off' ? <StalenessControl account={account} /> : null}
-      <InlineBalance account={account} negative={negative} />
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+      {account.freshness !== 'off' ? (
+        <span onClick={(e) => e.stopPropagation()}>
+          <StalenessControl account={account} />
+        </span>
+      ) : null}
+      <span onClick={(e) => e.stopPropagation()}>
+        <InlineBalance account={account} negative={negative} />
+      </span>
+      <div
+        className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+        onClick={(e) => e.stopPropagation()}
+      >
         <Button variant="ghost" size="sm" onClick={onHistory} aria-label={`Balance history for ${account.name}`}>
           <IconHistory width={16} height={16} />
         </Button>
@@ -499,83 +511,9 @@ function AddAccountModal({ onClose }: { onClose: () => void }) {
 }
 
 function HistoryDrawer({ account, onClose }: { account: Account; onClose: () => void }) {
-  const { data: snaps, isPending } = useBalances(account.id)
-  const addBalance = useAddBalance()
-  const delBalance = useDeleteBalance()
-  const [date, setDate] = useState(todayISO())
-  const [amount, setAmount] = useState('')
-  const negative = LIABILITY_TYPES.includes(account.type)
-
-  function submit(e: FormEvent) {
-    e.preventDefault()
-    const num = Number(amount.replace(/[$,\s]/g, ''))
-    if (!Number.isFinite(num) || !date) return
-    addBalance.mutate([account.id, { date, amount: num }], { onSuccess: () => setAmount('') })
-  }
-
-  const sorted = useMemo(() => [...(snaps ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1)), [snaps])
-
   return (
     <Drawer title={account.name} hint="Balance history — each snapshot is a point on your net-worth chart" onClose={onClose}>
-      {isPending ? (
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-32" />
-          <Skeleton className="h-40" />
-        </div>
-      ) : (
-        <div className="flex flex-col gap-5">
-          {sorted.length >= 2 ? (
-            <AreaChart
-              points={[...sorted].reverse().map((s) => ({ date: s.date, value: negative ? -s.amount : s.amount }))}
-              height={150}
-              ariaLabel={`${account.name} balance history`}
-            />
-          ) : null}
-
-          <form onSubmit={submit} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
-            <Field label="Date">
-              {(id) => <TextInput id={id} type="date" value={date} onChange={(e) => setDate(e.target.value)} />}
-            </Field>
-            <Field label="Amount">
-              {(id) => (
-                <TextInput
-                  id={id}
-                  inputMode="decimal"
-                  className="num"
-                  placeholder={String(account.balance)}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
-              )}
-            </Field>
-            <Button variant="primary" type="submit" disabled={addBalance.isPending || amount === ''}>
-              Add
-            </Button>
-          </form>
-
-          <ul className="divide-y divide-(--border) rounded-(--radius-s) border border-edge">
-            {sorted.map((s) => (
-              <li key={s.date} className="group flex items-center justify-between px-3 py-2">
-                <span className="text-[13px] text-ink-2">{formatDate(s.date)}</span>
-                <span className="flex items-center gap-1">
-                  <span className="num text-[13px] font-medium text-ink">{formatMoney(s.amount)}</span>
-                  <button
-                    type="button"
-                    onClick={() => delBalance.mutate([account.id, s.date])}
-                    aria-label={`Delete snapshot ${s.date}`}
-                    className="rounded p-1 text-ink-3 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 hover:text-negative"
-                  >
-                    <IconTrash width={14} height={14} />
-                  </button>
-                </span>
-              </li>
-            ))}
-            {sorted.length === 0 ? (
-              <li className="px-3 py-6 text-center text-[13px] text-ink-3">No snapshots yet.</li>
-            ) : null}
-          </ul>
-        </div>
-      )}
+      <BalanceHistoryPanel account={account} />
     </Drawer>
   )
 }
