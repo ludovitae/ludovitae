@@ -38,6 +38,27 @@ LIABILITY_TYPES = ("mortgage", "loan", "credit_card", "other_liability")
 INVESTABLE_TYPES = ("brokerage", "retirement", "hsa")
 CASH_TYPES = ("checking", "savings")
 PROPERTY_TYPES = ("property", "vehicle", "other_asset")
+# v1.3 (#25): how an account's balance/contributions are taxed in the sim.
+# `tax_deferred` = pre-tax retirement (RMDs, withdrawals taxed as ordinary
+# income); `roth` = post-tax retirement (no RMDs, withdrawals untaxed);
+# `taxable` = brokerage/cash (return of basis in phase 2); `hsa` = its own
+# bucket. Stored as a nullable OVERRIDE on Account; when null the treatment
+# is derived from `type` (see default_tax_treatment) so migrated data keeps
+# today's behavior exactly. `roth` is only reachable by an explicit override
+# (there is no roth account type).
+TAX_TREATMENTS = ("tax_deferred", "roth", "taxable", "hsa")
+
+
+def default_tax_treatment(account_type: str) -> str:
+    """The tax treatment implied by an account `type` when no explicit
+    override is set. `retirement` -> tax_deferred (today's behavior, so
+    migrated data is sim-identical), `hsa` -> hsa, everything else -> taxable.
+    There is no roth type: roth is reachable only by an explicit override."""
+    if account_type == "retirement":
+        return "tax_deferred"
+    if account_type == "hsa":
+        return "hsa"
+    return "taxable"
 ASSET_CLASSES = ("stocks", "bonds", "cash", "mixed")
 FLOW_KINDS = ("income", "expense", "contribution")
 MEMBER_ROLES = ("self", "partner", "child", "other")
@@ -126,6 +147,12 @@ class Account(Base):
     include_in_net_worth: Mapped[bool] = mapped_column(Boolean, default=True)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[dt.date] = mapped_column(Date, default=dt.date.today)
+    # v1.3 (#25): nullable tax-treatment OVERRIDE. NULL -> derived from `type`
+    # (default_tax_treatment); a stored value wins. Only `roth` requires an
+    # explicit value. Migration 0009 adds the column NULL for every existing
+    # row, so migrated data resolves to today's treatment and simulates
+    # bit-for-bit identically.
+    tax_treatment: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # v1.2 import freshness (docs/API.md): last_import_at is set on every
     # import commit; staleness_days is a per-account threshold override
     # (null -> default 35); track_freshness defaults by account type.
@@ -155,6 +182,13 @@ class Account(Base):
         if not self.balances:
             return 0.0
         return max(self.balances, key=lambda b: b.date).amount
+
+    @property
+    def resolved_tax_treatment(self) -> str:
+        """Effective tax treatment: the explicit override if set, else the
+        `type`-derived default. This is the single source of truth the
+        assembly layer routes balances/contributions by (#25)."""
+        return self.tax_treatment or default_tax_treatment(self.type)
 
 
 class BalanceSnapshot(Base):
