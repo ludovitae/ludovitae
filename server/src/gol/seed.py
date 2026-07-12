@@ -180,6 +180,11 @@ def seed_demo(db) -> dict:
                 asset_class="mixed", member_id=brian.id),
         Account(name="Dana's 403(b)", type="retirement", institution="TIAA",
                 asset_class="mixed", member_id=dana.id),
+        # A Roth IRA: a retirement-type account with an explicit `roth` tax
+        # treatment override (#25). Grows tax-free, no RMDs, untaxed
+        # withdrawals — exercises the per-member Roth bucket in the engine.
+        Account(name="Dana's Roth IRA", type="retirement", institution="Vanguard",
+                asset_class="stocks", member_id=dana.id, tax_treatment="roth"),
         Account(name="HSA", type="hsa", institution="Fidelity", asset_class="stocks",
                 member_id=brian.id),
         Account(name="The House", type="property", growth_rate_pct=3.0,
@@ -193,19 +198,20 @@ def seed_demo(db) -> dict:
         acc.track_freshness = acc.type in TRACK_FRESHNESS_TYPES
     db.add_all(accounts)
     db.flush()
-    checking, savings, brokerage, k401, b403, hsa, house, car, mortgage, card = accounts
+    (checking, savings, brokerage, k401, b403, roth, hsa, house, car, mortgage,
+     card) = accounts
 
     balances_now = {
         checking.id: 12_400.0, savings.id: 41_000.0, brokerage.id: 262_000.0,
-        k401.id: 388_000.0, b403.id: 176_000.0, hsa.id: 28_500.0,
-        house.id: 545_000.0, car.id: 21_000.0, mortgage.id: 296_000.0,
-        card.id: 1_850.0,
+        k401.id: 388_000.0, b403.id: 176_000.0, roth.id: 84_000.0,
+        hsa.id: 28_500.0, house.id: 545_000.0, car.id: 21_000.0,
+        mortgage.id: 296_000.0, card.id: 1_850.0,
     }
     # ~18 months of monthly history with mild drift for the dashboard chart.
     drift = {
         checking.id: 0.000, savings.id: 0.003, brokerage.id: 0.008,
-        k401.id: 0.008, b403.id: 0.008, hsa.id: 0.007, house.id: 0.0025,
-        car.id: -0.008, mortgage.id: -0.0025, card.id: 0.000,
+        k401.id: 0.008, b403.id: 0.008, roth.id: 0.009, hsa.id: 0.007,
+        house.id: 0.0025, car.id: -0.008, mortgage.id: -0.0025, card.id: 0.000,
     }
     months = _month_starts(18)
     for acc_id, now_amount in balances_now.items():
@@ -231,6 +237,9 @@ def seed_demo(db) -> dict:
              member_id=brian.id, ends_at_retirement=True),
         Flow(name="Dana's 403(b) contribution", kind="contribution",
              amount_monthly=900.0, account_id=b403.id, category="retirement",
+             member_id=dana.id, ends_at_retirement=True),
+        Flow(name="Dana's Roth IRA contribution", kind="contribution",
+             amount_monthly=500.0, account_id=roth.id, category="retirement",
              member_id=dana.id, ends_at_retirement=True),
         Flow(name="Brokerage auto-invest", kind="contribution", amount_monthly=600.0,
              account_id=brokerage.id, category="investing", ends_at_retirement=True),
@@ -264,7 +273,7 @@ def seed_demo(db) -> dict:
     now = utcnow()
     for acc in (checking, card):
         acc.last_import_at = now
-    for acc in (brokerage, k401, b403, hsa):
+    for acc in (brokerage, k401, b403, roth, hsa):
         acc.last_import_at = now - dt.timedelta(days=7)
     savings.last_import_at = now - dt.timedelta(days=60)
 
@@ -322,7 +331,7 @@ def seed(force: bool = False) -> None:
         stats = seed_demo(db)
         db.commit()
         print(
-            "seeded demo household: 3 members, 10 accounts, 7 flows, "
+            "seeded demo household: 3 members, 11 accounts, 8 flows, "
             f"7 spending categories, {stats['transactions']} transactions "
             f"({stats['pairs']} transfer pairs), 3 goals, 3 scenarios"
         )

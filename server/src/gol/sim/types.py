@@ -38,9 +38,16 @@ class MemberSpec:
 
     ``ss_monthly`` is the already-actuarially-adjusted benefit (today's
     dollars); ``ss_claim_age`` is carried only for the milestone label.
-    ``tax_deferred0`` is the member's starting retirement-account balance —
-    a sub-bucket of the household ``invested0``. ``life_end_month`` is
+    ``tax_deferred0`` is the member's starting pre-tax retirement balance and
+    ``roth0`` the starting post-tax (Roth) retirement balance — both
+    sub-buckets of the household ``invested0``. ``life_end_month`` is
     exclusive: the month after the member's last plan year.
+
+    The Roth sub-bucket (#25) is a sibling of the tax-deferred one: it grows
+    with the same blended factor and shrinks pro-rata on shortfall
+    withdrawals, but it is EXCLUDED from the RMD base and its withdrawals are
+    untaxed (they never gross up). A member holding only Roth retirement money
+    therefore has no RMDs and no phantom withdrawal tax.
     """
 
     id: int
@@ -52,6 +59,7 @@ class MemberSpec:
     ss_start_month: int | None = None
     ss_claim_age: int | None = None
     tax_deferred0: float = 0.0
+    roth0: float = 0.0
     rmd_start_month: int | None = None
 
 
@@ -65,7 +73,9 @@ class FlowSpec:
     transition for expenses and unowned income).
 
     ``td_member``: index into ``PlanInputs.members`` whose tax-deferred
-    sub-bucket a ``contrib_invested`` flow lands in (None = taxable).
+    sub-bucket a ``contrib_invested`` flow lands in (None = not tax-deferred).
+    ``roth_member``: same, for the Roth sub-bucket (#25). At most one of the
+    two is set; both None means a plain taxable/HSA invested contribution.
     """
 
     kind: str  # income | expense | contrib_invested | contrib_debt
@@ -74,6 +84,7 @@ class FlowSpec:
     start_month: int = 0
     end_month: int | None = None
     td_member: int | None = None
+    roth_member: int | None = None
 
 
 @dataclass(frozen=True)
@@ -100,10 +111,13 @@ class PlanInputs:
 
     # (stocks, bonds, cash) weights inside the invested bucket; sum to 1.
     invested_weights: tuple[float, float, float] = (0.6, 0.4, 0.0)
-    # Fraction of invested held in retirement-type accounts. Drives the coarse
-    # effective tax applied to shortfall withdrawals — kept fixed (v1
-    # semantics) so migrated v1 plans simulate identically; RMDs model the
-    # forced-distribution reality on top.
+    # Fraction of invested held in TAX-DEFERRED accounts — the deemed
+    # ordinary-income (taxable) share of a shortfall withdrawal. Drives the
+    # coarse effective tax on withdrawals; kept fixed (v1 semantics) so
+    # migrated v1 plans simulate identically. Since #25 this EXCLUDES Roth
+    # balances (assembly routes them to the Roth sub-bucket), so the Roth
+    # slice of a pro-rata withdrawal is correctly untaxed; RMDs model the
+    # forced-distribution reality on top (tax-deferred bucket only).
     retirement_share: float = 0.0
 
     property_growth_pct: float = 0.0

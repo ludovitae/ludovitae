@@ -5,11 +5,14 @@ loops are over months (state recurrence) and over household members (tiny),
 never over paths.
 
 Model summary (coarse by design, see ARCHITECTURE.md):
-- Buckets: cash, invested (with per-member tax-deferred sub-buckets), property,
-  debt.
+- Buckets: cash, invested (with per-member tax-deferred and Roth sub-buckets),
+  property, debt.
 - Lognormal monthly returns per asset class; invested bucket is a monthly
-  rebalanced mix of stocks/bonds/cash weights. Tax-deferred sub-buckets grow
-  with the same blended factor and shrink pro-rata on shortfall withdrawals.
+  rebalanced mix of stocks/bonds/cash weights. Tax-deferred and Roth
+  sub-buckets grow with the same blended factor and shrink pro-rata on
+  shortfall withdrawals. The Roth sub-bucket (#25) is excluded from the RMD
+  base and its withdrawals are untaxed (the tax gross-up applies only to the
+  tax-deferred ``retirement_share`` slice, which excludes Roth).
 - Inflation is AR(1) around the assumed mean; a per-path price index inflates
   retirement spending and social security.
 - Per-member timing (v1.1): income/contribution stops are pre-resolved into
@@ -96,12 +99,16 @@ def _build_flow_arrays(inputs: PlanInputs) -> dict[str, np.ndarray]:
     n = inputs.n_months
     arrays = {k: np.zeros(n) for k in (INCOME, EXPENSE, CONTRIB_INVESTED, CONTRIB_DEBT)}
     td_contrib = np.zeros((len(inputs.members), n))
+    roth_contrib = np.zeros((len(inputs.members), n))
     for spec in inputs.flows:
         arr = _flow_array(spec, n)
         arrays[spec.kind] += arr
         if spec.kind == CONTRIB_INVESTED and spec.td_member is not None:
             td_contrib[spec.td_member] += arr
+        if spec.kind == CONTRIB_INVESTED and spec.roth_member is not None:
+            roth_contrib[spec.roth_member] += arr
     arrays["td_contrib"] = td_contrib
+    arrays["roth_contrib"] = roth_contrib
 
     one_time = np.zeros(n)
     for ev in inputs.one_time_events:
@@ -248,17 +255,23 @@ def _run_paths(
     prop = np.full(n_paths, float(inputs.property0))
     debt = np.full(n_paths, float(inputs.debt0))
 
-    # Per-member tax-deferred sub-buckets of `invested` (RMD accounting only:
-    # they never move money by themselves, so plans without RMD activity
-    # reproduce v1 outputs exactly).
+    # Per-member tax-deferred and Roth sub-buckets of `invested`. Neither ever
+    # moves money by itself — they only tag portions of `invested` for tax
+    # treatment (tax-deferred: RMDs + taxed withdrawals; Roth: no RMDs, untaxed
+    # withdrawals). Plans without any sub-bucket activity reproduce v1 outputs
+    # exactly (both tracking flags stay False).
     n_members = len(inputs.members)
     td = np.zeros((n_members, n_paths))
+    roth = np.zeros((n_members, n_paths))
     for i, member in enumerate(inputs.members):
         td[i] = float(member.tax_deferred0)
+        roth[i] = float(member.roth0)
     td_contrib = flows["td_contrib"]
-    rmd_at = _rmd_schedule(inputs)
+    roth_contrib = flows["roth_contrib"]
+    rmd_at = _rmd_schedule(inputs)  # tax-deferred only — Roth is never in it
     # Track sub-buckets only when they can ever be non-zero (perf).
     track_td = n_members > 0 and (td.any() or td_contrib.any())
+    track_roth = n_members > 0 and (roth.any() or roth_contrib.any())
     # First scheduled RMD month per member (for the milestone balance check).
     rmd_first: dict[int, int] = {}
     for t, items in rmd_at.items():
@@ -318,6 +331,10 @@ def _run_paths(
             for i in range(n_members):
                 if td_contrib[i, t]:
                     td[i] += td_contrib[i, t]
+        if track_roth:
+            for i in range(n_members):
+                if roth_contrib[i, t]:
+                    roth[i] += roth_contrib[i, t]
         pay = np.minimum(contrib_debt[t], debt)
         cash = cash - pay
         debt = debt - pay
@@ -366,10 +383,18 @@ def _run_paths(
             inv_before = invested
             invested = invested - w
             cash = cash + w * (1.0 - wtax)
-        if track_td:
-            # Withdrawals shrink tax-deferred sub-buckets pro-rata.
+        if track_td or track_roth:
+            # Withdrawals shrink the sub-buckets pro-rata with `invested`. The
+            # Roth slice of the withdrawal is untaxed: that is already handled
+            # by `retirement_share` excluding Roth (so the gross-up only taxes
+            # the tax-deferred slice) — here the Roth bucket just tracks the
+            # balance it lost.
             denom = np.where(inv_before > 0.0, inv_before, 1.0)
-            td = td * np.where(inv_before > 0.0, 1.0 - w / denom, 1.0)
+            shrink = np.where(inv_before > 0.0, 1.0 - w / denom, 1.0)
+            if track_td:
+                td = td * shrink
+            if track_roth:
+                roth = roth * shrink
 
         # Bracket mode: December settlement on the plan-year grid. Computed
         # AFTER the shortfall step so the year's withdrawals are included and
@@ -385,6 +410,8 @@ def _run_paths(
         invested = invested * f_invested[:, t]
         if track_td:
             td = td * f_invested[:, t]
+        if track_roth:
+            roth = roth * f_invested[:, t]
         cash = np.where(cash > 0, cash * f_cash[:, t], cash)
         prop = prop * prop_f
         debt = debt * debt_f
