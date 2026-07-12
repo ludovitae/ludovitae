@@ -93,11 +93,25 @@ tax-deferred balances use the `self` member for RMD timing.
   "id": 1, "name": "Vanguard Brokerage", "type": "brokerage",
   "institution": "Vanguard", "balance": 250000.0,
   "growth_rate_pct": null, "asset_class": "stocks",
-  "member_id": 1,
+  "member_id": 1, "tax_treatment": null,
   "include_in_net_worth": true, "notes": "", "created_at": "2026-07-10",
   "external_account_masked": "···1234"
 }
 ```
+
+`tax_treatment` (v1.3, #25): how the account is taxed in the simulation —
+`tax_deferred | roth | taxable | hsa`, or `null` to derive the treatment from
+`type` (`retirement`→tax_deferred, `hsa`→hsa, everything else→taxable). This
+is a nullable **override**: `null` reproduces pre-#25 behavior exactly, so
+migrated data (migration 0009 adds the column `null` for every row) simulates
+bit-for-bit identically. `roth` is reachable only by setting it explicitly
+(there is no roth account `type`). A `roth` account grows tax-free, is
+excluded from RMDs, and its withdrawals are untaxed — fixing the phantom RMDs
+and phantom withdrawal tax that real Roth accounts previously suffered. The
+sim routes each investable account's balance and contributions to the owner's
+tax-deferred or Roth sub-bucket by the resolved treatment. (Substrate for
+Roth conversions and equity grants; conversions/withdrawal-ordering are #23,
+out of scope here.)
 
 `external_account_masked` (v1.2.2, #30 — coordinator-ruled): **read-only**
 display form of the hashed external-account link — `"···"` + last 4 of the
@@ -524,15 +538,16 @@ v1.1: top-level `retirement_age` is sugar for the `self` member's override
 
 ```json
 {
-  "engine_version": "3",
-  "engine_notes": ["<bracket-mode change summary>", "<flat-mode note>"],
+  "engine_version": "4",
+  "engine_notes": ["<tax-treatment / Roth-bucket summary>",
+                   "<bracket-mode change summary>", "<flat-mode note>"],
   "assumptions": {
     "market": {"stocks_mean_pct": 7.0, "stocks_vol_pct": 15.0,
                "bonds_mean_pct": 3.5, "bonds_vol_pct": 7.0,
                "cash_mean_pct": 1.5, "cash_vol_pct": 0.5},
     "inflation_pct": 2.5,
     "tax_model": "brackets", "filing_status": "single",
-    "engine_version": "3"
+    "engine_version": "4"
   },
   "n_paths": 1000, "seed": 42,
   "start_year": 2026, "ages": [46, 47, ...],
@@ -573,6 +588,17 @@ standard deduction (indexed by the sim's per-path price level), Social
 Security taxed via provisional income (thresholds nominal per IRC §86(c)),
 RMDs and tax-deferred withdrawal shares taxed as ordinary income with an
 annual December settlement — see docs/TAX-DESIGN.md.
+
+v1.3 (engine v4, #25): accounts carry a `tax_treatment` (see Accounts). The
+engine grows a per-member **Roth sub-bucket** alongside the tax-deferred one:
+Roth balances are excluded from the RMD base and their withdrawals are
+untaxed (they never gross up), while the tax-deferred `retirement_share`
+that drives the withdrawal gross-up now excludes Roth. A household whose
+retirement money is entirely tax-deferred is numerically unchanged from
+engine v3; a household with any Roth (or taxable/tax-deferred split that
+previously mis-taxed Roth) sees lower withdrawal tax and no forced Roth
+distributions — the version bump reflects this capability change even though
+pure-tax_deferred plans are identical. `assumptions` is unchanged.
 
 v1.1: `ages` is the `self` member's age axis. `milestones` (sorted by age)
 carries every member's retirement / SS-claim / RMD-start events under the
