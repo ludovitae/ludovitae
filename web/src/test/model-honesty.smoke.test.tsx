@@ -37,7 +37,7 @@ describe('assumptions strip (T-011b)', () => {
     expect(strip.textContent).toContain('inflation 2.5%')
     expect(strip.textContent).toContain('flat 18% tax')
     expect(strip.textContent).toContain('85% of SS taxable')
-    expect(strip.textContent).toContain('engine v3')
+    expect(strip.textContent).toContain('engine v4')
     expect(strip.getAttribute('aria-expanded')).toBe('false')
 
     // Expanded: full block with the verbatim flat-tax caveat (task spec)
@@ -90,7 +90,7 @@ describe('what-moved engine note (T-011b)', () => {
       undefined,
       { timeout: 8000 },
     )
-    expect(note.textContent).toContain('v1 → v3')
+    expect(note.textContent).toContain('v1 → v4')
     // engine_notes come from the response verbatim.
     expect(
       screen.getByText(/Bracket-aware federal tax when the flat-rate override is unset/),
@@ -98,7 +98,7 @@ describe('what-moved engine note (T-011b)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Got it' }))
     expect(screen.queryByText(/The engine behind these numbers changed/)).toBeNull()
-    expect(localStorage.getItem('gol.engine.lastSeen')).toBe('3')
+    expect(localStorage.getItem('gol.engine.lastSeen')).toBe('4')
     cleanup()
 
     // Fresh mount: dismissed pair never resurfaces — but give the studio a
