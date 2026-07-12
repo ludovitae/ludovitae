@@ -330,6 +330,35 @@ class SimulationRun(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class PlanSnapshot(Base):
+    """A frozen, named plan capture (v1.3, #21). Stores the FULL /simulate
+    response it produced plus a summary of the inputs it consumed, at a moment
+    in time. NEVER mutated after creation — engine upgrades do not touch old
+    snapshots (that is the whole point). At most one row has is_benchmark=True
+    (the active comparison line); the PATCH handler enforces zero-or-one."""
+
+    __tablename__ = "plan_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    # engine_version copied from the captured response for cheap list metadata
+    # and to make "captured under a now-superseded engine" visible.
+    engine_version: Mapped[str] = mapped_column(String(8))
+    # Loose reference (no FK): the scenario may be deleted; informational only.
+    scenario_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_benchmark: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Denormalized summary fields (also inside inputs_summary) — used by the
+    # list view and the tracking plan-line for spending/saving without
+    # unpacking the JSON blobs.
+    captured_net_worth: Mapped[float] = mapped_column(Money, default=0.0)
+    monthly_spending: Mapped[float] = mapped_column(Money, default=0.0)
+    monthly_saving: Mapped[float] = mapped_column(Money, default=0.0)
+    # The frozen /simulate response and the inputs summary it consumed.
+    response: Mapped[dict] = mapped_column(JSON)
+    inputs_summary: Mapped[dict] = mapped_column(JSON)
+
+
 class AuthCredential(Base):
     """Single-row table holding the argon2id password hash. Never plaintext."""
 

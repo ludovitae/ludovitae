@@ -10,6 +10,8 @@ import { Skeleton } from '@/components/Skeleton'
 import { formatMoney, formatMoneyDelta } from '@/lib/format'
 import { PageHeader } from '@/layout/AppShell'
 import { IconChevronRight, IconPlus, IconWarning } from '@/components/icons'
+import type { BenchmarkStat as BenchmarkStatData } from '@/api/types'
+import { statusPhrase, statusTone } from '@/features/tracking/status'
 
 const TYPE_LABELS: Record<string, string> = {
   checking: 'Checking',
@@ -88,6 +90,7 @@ export function DashboardPage() {
                 positive={data.monthly_surplus >= 0}
                 negative={data.monthly_surplus < 0}
               />
+              {data.benchmark ? <BenchmarkStat benchmark={data.benchmark} /> : null}
             </div>
           </div>
         </Card>
@@ -179,6 +182,20 @@ function StaleStrip({ accounts }: { accounts: StaleAccount[] }) {
         Update accounts
         <IconChevronRight width={14} height={14} />
       </span>
+    </Link>
+  )
+}
+
+/** v1.3 (#21): the active benchmark's net-worth delta. One surface (here +
+ * the Tracking page), no badge — the whole tile links through to Tracking. */
+function BenchmarkStat({ benchmark }: { benchmark: BenchmarkStatData }) {
+  const tone = statusTone(benchmark.status)
+  return (
+    <Link to="/tracking" className="group block" aria-label="View plan tracking">
+      <p className="text-xs font-medium text-ink-3 group-hover:text-ink-2">vs plan</p>
+      <p className={`num mt-1 text-lg font-semibold ${tone}`}>
+        {statusPhrase('net_worth', benchmark.delta_now, benchmark.status)}
+      </p>
     </Link>
   )
 }

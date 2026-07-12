@@ -616,6 +616,76 @@ export interface DashboardData {
   monthly_surplus: number
   /** v1.2: aging + stale only */
   stale_accounts: StaleAccount[]
+  /** v1.3 (#21): active benchmark's net-worth delta, null with no snapshot */
+  benchmark: BenchmarkStat | null
+}
+
+/* --- Plan snapshots & tracking (v1.3, #21) -------------------------------- */
+
+export type TrackingMetric = 'net_worth' | 'spending' | 'saving'
+export type TrackingStatus = 'ahead' | 'behind' | 'on_track' | 'within_normal_range'
+
+/** List/metadata view of a snapshot — never carries the full sim arrays. */
+export interface PlanMeta {
+  id: number
+  name: string
+  created_at: string
+  engine_version: string
+  is_benchmark: boolean
+  scenario_id: number | null
+  captured_net_worth: number
+  monthly_spending: number
+  monthly_saving: number
+  start_year: number
+  horizon_end_year: number
+}
+
+export interface PlanInputsSummary {
+  net_worth: number
+  monthly_spending: number
+  monthly_saving: number
+  annual_retirement_spending: number
+  inflation_pct: number
+  scenario_id: number | null
+  params: ScenarioParams
+}
+
+/** Full snapshot: metadata + the frozen /simulate response it captured. */
+export interface Plan extends PlanMeta {
+  response: SimResult
+  inputs_summary: PlanInputsSummary
+}
+
+export interface SnapshotCreate {
+  name: string
+  scenario_id?: number
+  params?: ScenarioParams
+  n_paths?: number
+  seed?: number
+}
+
+export interface TrackingPoint {
+  date: string
+  value: number
+}
+
+export interface PlanTracking {
+  metric: TrackingMetric
+  plan: TrackingPoint[]
+  actual: TrackingPoint[]
+  /** net_worth only — the p25-p75 "normal range"; null for spending/saving */
+  band: { p25: TrackingPoint[]; p75: TrackingPoint[] } | null
+  /** actual_now − plan_now (signed, metric units); null with no actual yet */
+  delta_now: number | null
+  status: TrackingStatus | null
+}
+
+export interface BenchmarkStat {
+  plan_id: number
+  name: string
+  metric: TrackingMetric
+  delta_now: number | null
+  status: TrackingStatus | null
 }
 
 export interface Settings {

@@ -529,7 +529,9 @@ def test_contract_walk_every_endpoint(authed):
         dash.json(),
         {"net_worth": Num, "assets": Num, "liabilities": Num, "history": list,
          "by_type": dict, "goals_summary": list, "monthly_surplus": Num,
-         "stale_accounts": list},
+         "stale_accounts": list,
+         # v1.3 (#21): active-benchmark net-worth delta, null with no snapshot
+         "benchmark": (dict, type(None))},
         "GET /dashboard",
     )
     for sa in dash.json()["stale_accounts"]:
@@ -543,6 +545,46 @@ def test_contract_walk_every_endpoint(authed):
         _assert_shape(gs, GOALS_SUMMARY_SPEC, "dashboard.goals_summary[]")
     # subset ruling: notes must NOT be present; pct_funded server-computed
     assert all("notes" not in gs for gs in dash.json()["goals_summary"])
+
+    # plan snapshots + tracking (v1.3, #21)
+    PLAN_META = {
+        "id": int, "name": str, "created_at": str, "engine_version": str,
+        "is_benchmark": bool, "scenario_id": (int, type(None)),
+        "captured_net_worth": Num, "monthly_spending": Num,
+        "monthly_saving": Num, "start_year": int, "horizon_end_year": int,
+    }
+    snap = authed.post(
+        "/api/v1/plans/snapshot",
+        json={"name": "2026 plan", "scenario_id": 0, "seed": 5, "n_paths": 100},
+    )
+    assert snap.status_code == 201
+    plan_id = snap.json()["id"]
+    _assert_shape(
+        snap.json(), {**PLAN_META, "response": dict, "inputs_summary": dict},
+        "POST /plans/snapshot",
+    )
+    assert snap.json()["is_benchmark"] is True  # first snapshot auto-benchmarks
+    plans_list = authed.get("/api/v1/plans")
+    assert plans_list.status_code == 200
+    _assert_shape(plans_list.json()[0], PLAN_META, "GET /plans[]")
+    _assert_shape(
+        authed.get(f"/api/v1/plans/{plan_id}").json(),
+        {**PLAN_META, "response": dict, "inputs_summary": dict}, "GET /plans/{id}",
+    )
+    for metric in ("net_worth", "spending", "saving"):
+        tr = authed.get(f"/api/v1/plans/{plan_id}/tracking?metric={metric}")
+        assert tr.status_code == 200, metric
+        _assert_shape(
+            tr.json(),
+            {"metric": str, "plan": list, "actual": list,
+             "band": (dict, type(None)), "delta_now": (int, float, type(None)),
+             "status": (str, type(None))},
+            f"GET /plans/{{id}}/tracking?metric={metric}",
+        )
+    assert authed.get(f"/api/v1/plans/{plan_id}/tracking?metric=bogus").status_code == 422
+    patched = authed.patch(f"/api/v1/plans/{plan_id}", json={"is_benchmark": False})
+    assert patched.status_code == 200 and patched.json()["is_benchmark"] is False
+    assert authed.delete(f"/api/v1/plans/{plan_id}").status_code == 204
 
     # settings GET/PATCH
     st = authed.get("/api/v1/settings")
@@ -571,7 +613,7 @@ def test_401_shape_on_every_unauthenticated_read(client):
                  "/transfers/candidates", "/rules", "/spending/summary",
                  "/spending/recurring", "/spending/hotspots",
                  "/spending/forecast", "/settings/ai", "/ai/usage", "/export",
-                 "/import/presets"):
+                 "/import/presets", "/plans"):
         resp = client.get(f"/api/v1{path}")
         assert resp.status_code == 401, path
         assert resp.json() == {

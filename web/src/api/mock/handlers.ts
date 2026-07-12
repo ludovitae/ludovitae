@@ -22,12 +22,19 @@ import type {
   ImportPreview,
   NewAccountPayload,
   ObservedSpending,
+  Plan,
+  PlanMeta,
+  PlanTracking,
   Scenario,
   ScenarioParams,
   SessionInfo,
   SimulateRequest,
+  SnapshotCreate,
   SpendingCategory,
   SpendingProfileInput,
+  TrackingMetric,
+  TrackingPoint,
+  TrackingStatus,
   TransferCandidate,
 } from '../types'
 import { LIABILITY_TYPES } from '../types'
@@ -144,6 +151,206 @@ function dashboard(): DashboardData {
         freshness: f.freshness,
         days_since_import: f.days_since_import,
       })),
+    // v1.3 (#21): active-benchmark net-worth delta (one surface, no badge)
+    benchmark: benchmarkStat(),
+  }
+}
+
+/* --------------------- plan snapshots (v1.3, #21) ------------------------ */
+/* The mock mirrors the server tracking math (docs/API.md) so the Tracking UI
+ * drives real controls: plan line frozen from the sim, actuals synthesized
+ * from the demo ledger, polarity-aware status incl. within_normal_range. */
+
+const INVESTABLE_TYPES = ['brokerage', 'retirement', 'hsa']
+const r2 = (v: number) => Math.round(v * 100) / 100
+
+function planRates(params: ScenarioParams): { spending: number; saving: number } {
+  const scale = 1 + (params.spending_delta_pct ?? 0) / 100
+  let spending = 0
+  for (const f of db.flows) if (f.kind === 'expense') spending += f.amount_monthly
+  for (const c of db.spendingProfile.categories) spending += c.monthly_amount
+  spending = spending * scale - (params.monthly_savings_delta ?? 0)
+  let saving = params.monthly_savings_delta ?? 0
+  for (const f of db.flows) {
+    if (f.kind !== 'contribution' || f.account_id == null) continue
+    const acc = db.accounts.find((a) => a.id === f.account_id)
+    if (acc && INVESTABLE_TYPES.includes(acc.type)) saving += f.amount_monthly
+  }
+  return { spending: r2(spending), saving: r2(saving) }
+}
+
+function planMeta(seed: db.PlanSeed): PlanMeta {
+  const sim = simulate(seed.params)
+  const { spending, saving } = planRates(seed.params)
+  return {
+    id: seed.id,
+    name: seed.name,
+    created_at: seed.created_at,
+    engine_version: sim.engine_version,
+    is_benchmark: seed.is_benchmark,
+    scenario_id: seed.scenario_id,
+    captured_net_worth: seed.captured_net_worth,
+    monthly_spending: spending,
+    monthly_saving: saving,
+    start_year: sim.start_year,
+    horizon_end_year: sim.start_year + sim.ages.length - 1,
+  }
+}
+
+function planFull(seed: db.PlanSeed): Plan {
+  const sim = simulate(seed.params)
+  const meta = planMeta(seed)
+  return {
+    ...meta,
+    response: sim,
+    inputs_summary: {
+      net_worth: seed.captured_net_worth,
+      monthly_spending: meta.monthly_spending,
+      monthly_saving: meta.monthly_saving,
+      annual_retirement_spending:
+        seed.params.annual_retirement_spending ?? db.profile.annual_retirement_spending,
+      inflation_pct: seed.params.inflation_override_pct ?? db.profile.inflation_pct,
+      scenario_id: seed.scenario_id,
+      params: seed.params,
+    },
+  }
+}
+
+function isoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** (start, end) ISO dates for every month fully in the past since `startISO`. */
+function completeMonths(startISO: string): { start: string; end: string }[] {
+  const out: { start: string; end: string }[] = []
+  const s = new Date(startISO)
+  const cur = new Date(s.getFullYear(), s.getMonth(), 1)
+  const now = new Date()
+  const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  while (cur < currentMonth) {
+    const y = cur.getFullYear()
+    const mo = cur.getMonth()
+    out.push({ start: isoDate(new Date(y, mo, 1)), end: isoDate(new Date(y, mo + 1, 0)) })
+    cur.setMonth(cur.getMonth() + 1)
+  }
+  return out
+}
+
+function yearEnds(values: number[], startYear: number): TrackingPoint[] {
+  return values.map((v, k) => ({ date: `${startYear + k}-12-31`, value: r2(v) }))
+}
+
+function actualNetWorth(createdISO: string): TrackingPoint[] {
+  const monthStart = `${createdISO.slice(0, 8)}01`
+  return db
+    .netWorthHistory()
+    .filter((p) => p.date >= monthStart)
+    .map((p) => ({ date: p.date, value: p.net_worth }))
+}
+
+/** Deterministic wobble in [-amp, amp] so demo actuals look lived-in. */
+function wobble(i: number, amp: number): number {
+  const x = Math.sin((i + 1) * 12.9898) * 43758.5453
+  return (x - Math.floor(x) - 0.5) * 2 * amp
+}
+
+function actualFlow(rate: number, createdISO: string, bias: number): TrackingPoint[] {
+  return completeMonths(createdISO).map((mm, i) => ({
+    date: mm.end,
+    value: r2(rate * (1 + bias + wobble(i, 0.025))),
+  }))
+}
+
+function daysBetween(aISO: string, bISO: string): number {
+  return Math.round((Date.parse(bISO) - Date.parse(aISO)) / 86_400_000)
+}
+
+function interp(series: TrackingPoint[], targetISO: string): number | null {
+  if (!series.length) return null
+  const pts = series
+    .map((p) => [p.date, p.value] as [string, number])
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+  const last = pts[pts.length - 1]!
+  if (targetISO <= pts[0]![0]) return pts[0]![1]
+  if (targetISO >= last[0]) return last[1]
+  for (let i = 1; i < pts.length; i++) {
+    if (targetISO <= pts[i]![0]) {
+      const [d0, v0] = pts[i - 1]!
+      const [d1, v1] = pts[i]!
+      const span = daysBetween(d0, d1) || 1
+      return v0 + (v1 - v0) * (daysBetween(d0, targetISO) / span)
+    }
+  }
+  return last[1]
+}
+
+function thresholdStatus(delta: number, planNow: number, higherBetter: boolean): TrackingStatus {
+  const tol = Math.max(Math.abs(planNow) * 0.02, 1)
+  if (Math.abs(delta) <= tol) return 'on_track'
+  const ahead = higherBetter ? delta > 0 : delta < 0
+  return ahead ? 'ahead' : 'behind'
+}
+
+function classify(
+  metric: TrackingMetric,
+  plan: TrackingPoint[],
+  actual: TrackingPoint[],
+  band: PlanTracking['band'],
+): { delta_now: number | null; status: TrackingStatus | null } {
+  if (!actual.length) return { delta_now: null, status: null }
+  const now = actual[actual.length - 1]!.date
+  const actualNow = actual[actual.length - 1]!.value
+  const planNow = interp(plan, now)
+  if (planNow == null) return { delta_now: null, status: null }
+  const delta = r2(actualNow - planNow)
+  let status: TrackingStatus
+  if (metric === 'net_worth') {
+    if (actualNow >= planNow) status = 'ahead'
+    else {
+      const p25Now = band ? interp(band.p25, now) : null
+      status = p25Now != null && actualNow >= p25Now ? 'within_normal_range' : 'behind'
+    }
+  } else {
+    status = thresholdStatus(delta, planNow, metric === 'saving')
+  }
+  return { delta_now: delta, status }
+}
+
+function planTracking(seed: db.PlanSeed, metric: TrackingMetric): PlanTracking {
+  const sim = simulate(seed.params)
+  const created = seed.created_at.slice(0, 10)
+  let plan: TrackingPoint[]
+  let actual: TrackingPoint[]
+  let band: PlanTracking['band'] = null
+  if (metric === 'net_worth') {
+    const anchor: TrackingPoint = { date: created, value: seed.captured_net_worth }
+    plan = [anchor, ...yearEnds(sim.deterministic.net_worth, sim.start_year)]
+    band = {
+      p25: [anchor, ...yearEnds(sim.percentiles.p25, sim.start_year)],
+      p75: [anchor, ...yearEnds(sim.percentiles.p75, sim.start_year)],
+    }
+    actual = actualNetWorth(created)
+  } else {
+    const { spending, saving } = planRates(seed.params)
+    const rate = metric === 'spending' ? spending : saving
+    plan = completeMonths(created).map((mm) => ({ date: mm.end, value: r2(rate) }))
+    // demo story: spending runs a touch over plan (behind), saving on track
+    actual = actualFlow(rate, created, metric === 'spending' ? 0.05 : 0)
+  }
+  const { delta_now, status } = classify(metric, plan, actual, band)
+  return { metric, plan, actual, band, delta_now, status }
+}
+
+function benchmarkStat() {
+  const seed = db.planSeeds.find((p) => p.is_benchmark)
+  if (!seed) return null
+  const tr = planTracking(seed, 'net_worth')
+  return {
+    plan_id: seed.id,
+    name: seed.name,
+    metric: 'net_worth' as const,
+    delta_now: tr.delta_now,
+    status: tr.status,
   }
 }
 
@@ -1178,6 +1385,62 @@ async function route(
     const req = body as unknown as SimulateRequest
     const params = 'scenario_id' in req ? scenarioById(req.scenario_id).params : req.params
     return simulate(params)
+  }
+
+  /* ---- plan snapshots + tracking (v1.3, #21) ---- */
+  if (key === 'GET /plans')
+    return [...db.planSeeds].sort((a, b) => b.id - a.id).map(planMeta)
+  if (key === 'POST /plans/snapshot') {
+    const b = body as unknown as SnapshotCreate
+    if (b.scenario_id != null && b.params)
+      throw new ApiError(400, 'bad_request', 'provide either scenario_id or params, not both')
+    let params: ScenarioParams
+    let scenarioId: number | null
+    if (b.params) {
+      params = b.params
+      scenarioId = null
+    } else if (b.scenario_id != null) {
+      params = scenarioById(b.scenario_id).params
+      scenarioId = b.scenario_id || null
+    } else {
+      params = {}
+      scenarioId = null
+    }
+    const seed: db.PlanSeed = {
+      id: db.nextId.plan++,
+      name: String(b.name ?? 'Untitled plan'),
+      created_at: new Date().toISOString().slice(0, 19),
+      scenario_id: scenarioId,
+      params,
+      is_benchmark: db.planSeeds.length === 0,
+      captured_net_worth: dashboard().net_worth,
+    }
+    db.planSeeds.push(seed)
+    return planFull(seed)
+  }
+  m = /^\/plans\/(\d+)\/tracking$/.exec(path)
+  if (m) {
+    const seed = db.planSeeds.find((p) => p.id === Number(m![1])) ?? notFound('plan')
+    const metric = String(query?.metric ?? 'net_worth')
+    if (metric !== 'net_worth' && metric !== 'spending' && metric !== 'saving')
+      throw new ApiError(422, 'validation_error', 'metric must be net_worth|spending|saving')
+    return planTracking(seed, metric)
+  }
+  m = /^\/plans\/(\d+)$/.exec(path)
+  if (m) {
+    const id = Number(m[1])
+    const seed = db.planSeeds.find((p) => p.id === id) ?? notFound('plan')
+    if (method === 'GET') return planFull(seed)
+    if (method === 'PATCH') {
+      const wantBenchmark = Boolean((body as { is_benchmark?: boolean }).is_benchmark)
+      if (wantBenchmark) for (const p of db.planSeeds) p.is_benchmark = p.id === id
+      else seed.is_benchmark = false
+      return planFull(seed)
+    }
+    if (method === 'DELETE') {
+      db.planSeeds.splice(db.planSeeds.indexOf(seed), 1)
+      return undefined
+    }
   }
 
   /* ---- dashboard & settings ---- */

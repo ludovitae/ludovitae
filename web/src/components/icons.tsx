@@ -47,6 +47,15 @@ export const IconScenarios = (p: SVGProps<SVGSVGElement>) => (
   </I>
 )
 
+export const IconTracking = (p: SVGProps<SVGSVGElement>) => (
+  <I {...p}>
+    {/* a plan (dashed) line and the actual (solid) line diverging above it */}
+    <path d="M3 13c3-1 4.5-6 7-6s3.5 3 7 1" strokeDasharray="2.5 2.2" opacity=".55" />
+    <path d="M3 15c3 0 4.5-8 7-8s4 6 7 3" />
+    <circle cx="17" cy="10" r="1.3" fill="currentColor" stroke="none" />
+  </I>
+)
+
 export const IconGoals = (p: SVGProps<SVGSVGElement>) => (
   <I {...p}>
     <circle cx="10" cy="10" r="7" />

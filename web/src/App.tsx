@@ -19,6 +19,7 @@ import { AccountsPage } from '@/features/accounts/AccountsPage'
 import { AccountDetailPage } from '@/features/accounts/AccountDetailPage'
 import { SpendingPage } from '@/features/spending/SpendingPage'
 import { ScenariosPage } from '@/features/scenarios/ScenariosPage'
+import { TrackingPage } from '@/features/tracking/TrackingPage'
 import { GoalsPage } from '@/features/goals/GoalsPage'
 import { ImportPage } from '@/features/import/ImportPage'
 import { ReviewPage } from '@/features/review/ReviewPage'
@@ -83,6 +84,7 @@ const router = createBrowserRouter([
           { path: '/accounts/:id', element: <AccountDetailPage /> },
           { path: '/spending', element: <SpendingPage /> },
           { path: '/scenarios', element: <ScenariosPage /> },
+          { path: '/tracking', element: <TrackingPage /> },
           { path: '/goals', element: <GoalsPage /> },
           { path: '/import', element: <ImportPage /> },
           { path: '/review', element: <ReviewPage /> },

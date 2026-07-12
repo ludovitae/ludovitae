@@ -34,6 +34,9 @@ import type {
   ImportPreview,
   NewAccountPayload,
   ObservedSpending,
+  Plan,
+  PlanMeta,
+  PlanTracking,
   Profile,
   Scenario,
   ScenarioCreate,
@@ -42,6 +45,8 @@ import type {
   Settings,
   SimResult,
   SimulateRequest,
+  SnapshotCreate,
+  TrackingMetric,
   RecurringCharge,
   SpendingForecast,
   SpendingHotspots,
@@ -318,6 +323,20 @@ export const api = {
   },
 
   simulate: (req: SimulateRequest) => request<SimResult>('POST', '/simulate', { json: req }),
+
+  /* v1.3 (#21): plan snapshots + plan-vs-actuals tracking */
+  plans: {
+    list: () => request<PlanMeta[]>('GET', '/plans'),
+    get: (id: number) => request<Plan>('GET', `/plans/${id}`),
+    /** runs a sim now, freezes it; the first snapshot auto-benchmarks */
+    snapshot: (body: SnapshotCreate) => request<Plan>('POST', '/plans/snapshot', { json: body }),
+    remove: (id: number) => request<void>('DELETE', `/plans/${id}`),
+    /** promoting one benchmark demotes every other (zero-or-one invariant) */
+    setBenchmark: (id: number, isBenchmark: boolean) =>
+      request<Plan>('PATCH', `/plans/${id}`, { json: { is_benchmark: isBenchmark } }),
+    tracking: (id: number, metric: TrackingMetric) =>
+      request<PlanTracking>('GET', `/plans/${id}/tracking`, { query: { metric } }),
+  },
 
   dashboard: () => request<DashboardData>('GET', '/dashboard'),
 

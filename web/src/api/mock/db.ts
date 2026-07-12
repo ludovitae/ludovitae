@@ -11,6 +11,7 @@ import type {
   ImportPreset,
   Profile,
   Scenario,
+  ScenarioParams,
   Settings,
   SpendingProfile,
   Transaction,
@@ -533,6 +534,57 @@ function builtinPresets(): ImportPreset[] {
 
 export const importPresets: ImportPreset[] = builtinPresets()
 
+/* ------------------- plan snapshots (v1.3, #21) -------------------------- */
+/* A snapshot's frozen /simulate response is regenerated deterministically
+ * from its params by runMockSim (golden fixtures are pinned), so we store
+ * only the lightweight seed here and let the handler assemble the full Plan
+ * and its tracking series. */
+
+export interface PlanSeed {
+  id: number
+  name: string
+  /** ISO datetime — the capture moment; anchors the plan line + tracking window */
+  created_at: string
+  scenario_id: number | null
+  params: ScenarioParams
+  is_benchmark: boolean
+  captured_net_worth: number
+}
+
+/** Net worth `n` months ago from the demo balance history (carry-forward). */
+export function netWorthAtMonthsAgo(n: number): number {
+  const target = n === 0 ? today : isoMonthsAgo(n)
+  const hist = netWorthHistory()
+  let v = hist[0]?.net_worth ?? 0
+  for (const p of hist) if (p.date <= target) v = p.net_worth
+  return v
+}
+
+function monthsAgoDateTime(n: number): string {
+  return `${isoMonthsAgo(n)}T12:00:00`
+}
+
+export const planSeeds: PlanSeed[] = [
+  {
+    id: 1,
+    name: 'Baseline — spring check-in',
+    created_at: monthsAgoDateTime(5),
+    scenario_id: null,
+    params: {},
+    is_benchmark: true,
+    captured_net_worth: netWorthAtMonthsAgo(5),
+  },
+  {
+    id: 2,
+    name: 'Retire at 55 — revision',
+    created_at: monthsAgoDateTime(2),
+    scenario_id: 1,
+    params: { retirement_age: 55, annual_retirement_spending: 70000 },
+    is_benchmark: false,
+    captured_net_worth: netWorthAtMonthsAgo(2),
+  },
+]
+
 /* ----------------------- AI budget state (v1.2) -------------------------- */
 /* The key itself is write-only storage; enabled stays false (stub). Usage is
  * all zeros — the ledger ships before any AI call exists. */
@@ -556,6 +608,7 @@ export const nextId = {
   rule: 4,
   transferPair: 9500,
   importPreset: BUILTIN_PRESET_SPECS.length + 1,
+  plan: 3,
 }
 
 /* --------------------------- admin reset (#27) --------------------------- */
@@ -574,6 +627,7 @@ const initialState = structuredClone({
   transactions,
   transferCandidates,
   rules,
+  planSeeds,
   balances: [...balances.entries()],
   nextId,
 })
@@ -600,6 +654,7 @@ export function resetDb(mode: 'demo' | 'empty'): void {
     replaceArray(transactions, snap.transactions)
     replaceArray(transferCandidates, snap.transferCandidates)
     replaceArray(rules, snap.rules)
+    replaceArray(planSeeds, snap.planSeeds)
     balances.clear()
     for (const [id, snaps] of snap.balances) balances.set(id, snaps)
     Object.assign(nextId, snap.nextId, { importPreset: nextId.importPreset })
@@ -627,6 +682,7 @@ export function resetDb(mode: 'demo' | 'empty'): void {
   replaceArray(transactions, [])
   replaceArray(transferCandidates, [])
   replaceArray(rules, [])
+  replaceArray(planSeeds, [])
   balances.clear()
   nextId.member = 2
 }
