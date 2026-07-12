@@ -26,7 +26,9 @@ import type {
   ScenarioParams,
   ScenarioPatch,
   Settings,
+  SnapshotCreate,
   SpendingProfileInput,
+  TrackingMetric,
 } from './types'
 import { serializeParams } from '@/lib/scenarioParams'
 
@@ -57,6 +59,11 @@ export const qk = {
   importPresets: ['import', 'presets'] as const,
   aiSettings: ['ai', 'settings'] as const,
   aiUsage: (months: number) => ['ai', 'usage', months] as const,
+  /* v1.3 (#21): plan snapshots + tracking */
+  plans: ['plans'] as const,
+  plan: (id: number) => ['plans', id] as const,
+  planTracking: (id: number, metric: TrackingMetric) =>
+    ['plans', id, 'tracking', metric] as const,
 }
 
 export function useSession() {
@@ -341,6 +348,50 @@ export function usePatchScenario() {
 
 export function useDeleteScenario() {
   return useInvalidating((id: number) => api.scenarios.remove(id), [qk.scenarios, ['compare']])
+}
+
+/* --------------------- v1.3 plan snapshots + tracking -------------------- */
+
+export function usePlans() {
+  return useQuery({ queryKey: qk.plans, queryFn: api.plans.list })
+}
+
+export function usePlan(id: number | null) {
+  return useQuery({
+    queryKey: qk.plan(id ?? -1),
+    queryFn: () => api.plans.get(id as number),
+    enabled: id != null,
+  })
+}
+
+export function usePlanTracking(id: number | null, metric: TrackingMetric) {
+  return useQuery({
+    queryKey: qk.planTracking(id ?? -1, metric),
+    queryFn: () => api.plans.tracking(id as number, metric),
+    enabled: id != null,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useCreateSnapshot() {
+  /* a new snapshot may become the benchmark and shifts the dashboard stat */
+  return useInvalidating(
+    (body: SnapshotCreate) => api.plans.snapshot(body),
+    [qk.plans, qk.dashboard],
+  )
+}
+
+export function useSetBenchmark() {
+  /* promoting/demoting flips is_benchmark across all snapshots — refetch the
+   * list, every tracking view, and the dashboard stat */
+  return useInvalidating(
+    (id: number, isBenchmark: boolean) => api.plans.setBenchmark(id, isBenchmark),
+    [['plans'], qk.dashboard],
+  )
+}
+
+export function useDeleteSnapshot() {
+  return useInvalidating((id: number) => api.plans.remove(id), [['plans'], qk.dashboard])
 }
 
 export function usePatchSettings() {
