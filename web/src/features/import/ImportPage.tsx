@@ -3,9 +3,13 @@
  * sign-convention confirm step, split debit/credit mapping.
  * #26: create-unseen-accounts — OFX ACCTID auto-match, inline new-account
  * mini-form, multi-account CSV routing (per-group match/create), preset
- * last-account defaults, pending-row (status column) reporting. */
+ * last-account defaults, pending-row (status column) reporting.
+ * #30: `?account=<id>` pre-scopes the wizard to one account — the picker is
+ * pre-selected and locked (with an unlock affordance); presets still
+ * auto-match. The sidebar Import tab is this same page, unscoped. */
 
 import { useCallback, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '@/api/client'
 import { useAccounts } from '@/api/queries'
 import { qk } from '@/api/queries'
@@ -77,11 +81,17 @@ export function ImportPage() {
   const { data: accounts, isPending } = useAccounts()
   const [step, setStep] = useState<Step>({ at: 'pick' })
   const [error, setError] = useState<string | null>(null)
+  // #30: pre-scoped by the account detail page's "Import into this account"
+  const [searchParams] = useSearchParams()
+  const [unlocked, setUnlocked] = useState(false)
 
   const importable = useMemo(
     () => (accounts ?? []).filter((a) => !LIABILITY_TYPES.includes(a.type) || a.type === 'credit_card'),
     [accounts],
   )
+
+  const scopedParam = Number(searchParams.get('account'))
+  const scoped = (!unlocked && importable.find((a) => a.id === scopedParam)) || null
 
   if (isPending) {
     return (
@@ -107,6 +117,8 @@ export function ImportPage() {
       {step.at === 'pick' ? (
         <PickStep
           accounts={importable}
+          scoped={scoped}
+          onUnlock={() => setUnlocked(true)}
           onError={setError}
           onPreview={(next) => {
             setError(null)
@@ -119,6 +131,8 @@ export function ImportPage() {
         <PreviewStep
           step={step}
           accounts={importable}
+          scoped={scoped}
+          onUnlock={() => setUnlocked(true)}
           onBack={() => setStep({ at: 'pick' })}
           onError={setError}
           onDone={(result, accountName) => {
@@ -165,16 +179,23 @@ function StepRail({ current }: { current: Step['at'] }) {
 
 function PickStep({
   accounts,
+  scoped,
+  onUnlock,
   onPreview,
   onError,
 }: {
   accounts: Account[]
+  /** #30: pre-scoped target; the picker locks onto it until unlocked */
+  scoped: Account | null
+  onUnlock: () => void
   onPreview: (step: Extract<Step, { at: 'preview' }>) => void
   onError: (msg: string | null) => void
 }) {
   // #26: with no accounts yet, the wizard starts on "create new" — imports
-  // work from a completely empty database
-  const [choice, setChoice] = useState<string>(accounts[0] ? String(accounts[0].id) : NEW_ACCOUNT)
+  // work from a completely empty database. #30: a scope pins the choice.
+  const [choice, setChoice] = useState<string>(
+    scoped ? String(scoped.id) : accounts[0] ? String(accounts[0].id) : NEW_ACCOUNT,
+  )
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -224,16 +245,35 @@ function PickStep({
           hint={choice === NEW_ACCOUNT ? 'You’ll name the new account after we read the file' : undefined}
         >
           {(id) => (
-            <Select id={id} value={choice} onChange={(e) => setChoice(e.target.value)}>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-              <option value={NEW_ACCOUNT}>＋ Create new account…</option>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select
+                id={id}
+                value={choice}
+                disabled={scoped !== null}
+                onChange={(e) => setChoice(e.target.value)}
+                className="flex-1"
+              >
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+                <option value={NEW_ACCOUNT}>＋ Create new account…</option>
+              </Select>
+              {scoped ? (
+                <Button variant="ghost" size="sm" onClick={onUnlock}>
+                  Import elsewhere
+                </Button>
+              ) : null}
+            </div>
           )}
         </Field>
+        {scoped ? (
+          <p className="-mt-2 text-xs text-ink-3">
+            Scoped to <span className="font-medium text-ink-2">{scoped.name}</span> from its account
+            page — every file lands there unless you unlock the picker.
+          </p>
+        ) : null}
 
         <label
           onDragOver={(e) => {
@@ -297,12 +337,17 @@ function draftToPayload(d: NewAccountDraft): NewAccountPayload {
 function PreviewStep({
   step,
   accounts,
+  scoped,
+  onUnlock,
   onBack,
   onDone,
   onError,
 }: {
   step: Extract<Step, { at: 'preview' }>
   accounts: Account[]
+  /** #30: pre-scoped target; wins over OFX match and preset defaults */
+  scoped: Account | null
+  onUnlock: () => void
   onBack: () => void
   onDone: (result: ImportCommitResult, accountName: string) => void
   onError: (msg: string | null) => void
@@ -331,10 +376,12 @@ function PreviewStep({
   const multiGroups = csv?.account_groups ?? null
   const multi = !!(multiGroups && mapping.account_id_column)
 
-  // --- single-target selection (#26): OFX match > preset default > step-1 pick
+  // --- single-target selection: #30 scope > OFX match > preset default >
+  // step-1 pick (#26)
   const hints = !isCsv ? ofxHints(step.fileText) : { org: null, type: null }
   const matchedId = ofx?.account_match.account_id ?? null
   const initialTarget = (): string => {
+    if (scoped) return String(scoped.id)
     if (matchedId !== null) return String(matchedId)
     if (isCsv && preset?.last_account_id != null) return String(preset.last_account_id)
     if (step.target.kind === 'existing') return String(step.target.id)
@@ -620,6 +667,12 @@ function PreviewStep({
             title="Accounts in this file"
             hint="Each account number maps to one of your accounts — unseen ones become new accounts"
           />
+          {scoped ? (
+            <p className="px-5 pb-2 text-[12px] text-ink-2">
+              This file carries several account numbers, so rows route by the mapping below — the{' '}
+              <span className="font-medium">{scoped.name}</span> scope doesn’t apply here.
+            </p>
+          ) : null}
           <ul className="flex flex-col divide-y divide-(--border) px-5 pb-4">
             {(multiGroups ?? []).map((g) => (
               <GroupRow
@@ -638,21 +691,32 @@ function PreviewStep({
         <div className="flex flex-col gap-3 px-5 py-4">
           {!multi ? (
             <div className="flex flex-wrap items-start gap-4">
-              <Field label="Into account">
+              <Field
+                label="Into account"
+                hint={scoped ? `Scoped to ${scoped.name} from its account page` : undefined}
+              >
                 {(id) => (
-                  <Select
-                    id={id}
-                    value={targetChoice}
-                    onChange={(e) => setTargetChoice(e.target.value)}
-                    className="w-56"
-                  >
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                    <option value={NEW_ACCOUNT}>＋ Create new account…</option>
-                  </Select>
+                  <div className="flex items-center gap-2">
+                    <Select
+                      id={id}
+                      value={targetChoice}
+                      disabled={scoped !== null}
+                      onChange={(e) => setTargetChoice(e.target.value)}
+                      className="w-56"
+                    >
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                      <option value={NEW_ACCOUNT}>＋ Create new account…</option>
+                    </Select>
+                    {scoped ? (
+                      <Button variant="ghost" size="sm" onClick={onUnlock}>
+                        Import elsewhere
+                      </Button>
+                    ) : null}
+                  </div>
                 )}
               </Field>
               {targetChoice === NEW_ACCOUNT ? (
