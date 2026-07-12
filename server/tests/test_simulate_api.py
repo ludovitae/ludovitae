@@ -36,11 +36,12 @@ def test_simulate_response_shape(authed):
     resp = authed.post("/api/v1/simulate", json={"scenario_id": 0, "seed": 42, "n_paths": 500})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["engine_version"] == "3"
-    assert len(body["engine_notes"]) == 2
+    assert body["engine_version"] == "4"
+    assert len(body["engine_notes"]) == 3
     assert all(isinstance(n, str) for n in body["engine_notes"])
-    assert "tax_model=brackets" in body["engine_notes"][0]
-    assert "tax_model=flat" in body["engine_notes"][1]
+    assert "tax treatment" in body["engine_notes"][0]  # v4 (#25) leads the list
+    assert "tax_model=brackets" in body["engine_notes"][1]
+    assert "tax_model=flat" in body["engine_notes"][2]
     assert body["n_paths"] == 500
     assert body["seed"] == 42
     assert set(body["percentiles"]) == {"p10", "p25", "p50", "p75", "p90"}
@@ -80,7 +81,7 @@ def test_simulate_assumptions_reflect_inputs_used(authed):
         "tax_model": "flat",
         "effective_tax_rate_pct": 22.0,
         "ss_taxable_share": 0.85,
-        "engine_version": "3",
+        "engine_version": "4",
     }
     # scenario overrides flow into the assumptions (means overridden, vols kept)
     custom = authed.post(
@@ -160,8 +161,8 @@ def test_compare_results_carry_assumptions(authed):
     assert results[0]["assumptions"]["market"]["stocks_mean_pct"] == 7.0
     assert results[1]["assumptions"]["market"]["stocks_mean_pct"] == 4.0
     for r in results:
-        assert r["engine_version"] == "3"
-        assert len(r["engine_notes"]) == 2
+        assert r["engine_version"] == "4"
+        assert len(r["engine_notes"]) == 3
         # fresh profile -> null override -> bracket mode
         assert r["assumptions"]["tax_model"] == "brackets"
         assert r["assumptions"]["filing_status"] == "single"

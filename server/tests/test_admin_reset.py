@@ -149,7 +149,7 @@ def test_demo_reset_seeds_demo_household(authed):
     assert resp.json()["mode"] == "demo"
 
     accounts = authed.get("/api/v1/accounts").json()
-    assert len(accounts) == 10  # the seeder's household
+    assert len(accounts) == 11  # the seeder's household (incl. a Roth IRA, #25)
     household = authed.get("/api/v1/household").json()
     assert len(household) == 3
     assert sum(1 for m in household if m["role"] == "self") == 1

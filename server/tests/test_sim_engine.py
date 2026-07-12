@@ -26,7 +26,8 @@ ZERO_GROWTH = MarketParams(
 
 
 def base_inputs(retirement_age: int = 65, tax_deferred0: float = 360_000,
-                td_routing: bool = True, **overrides) -> PlanInputs:
+                td_routing: bool = True, roth0: float = 0.0,
+                **overrides) -> PlanInputs:
     """The golden household: age 46 (born 1980 -> RMDs at 75), retires at 65,
     60% of the 600k portfolio tax-deferred, SS 2,200 claimed at FRA."""
     start_age, life_expectancy = 46, 92
@@ -36,7 +37,8 @@ def base_inputs(retirement_age: int = 65, tax_deferred0: float = 360_000,
         id=1, name="Alex", age0_months=start_age * 12, life_end_month=horizon,
         retirement_month=(retirement_age - start_age) * 12,
         ss_monthly=2_200, ss_start_month=(67 - start_age) * 12, ss_claim_age=67,
-        tax_deferred0=tax_deferred0, rmd_start_month=(75 - start_age) * 12,
+        tax_deferred0=tax_deferred0, roth0=roth0,
+        rmd_start_month=(75 - start_age) * 12,
     )
     params = dict(
         start_age=start_age, start_year=2026, horizon_months=horizon,
@@ -125,6 +127,42 @@ def test_no_tax_deferral_golden():
     assert r["ending_net_worth"]["p10"] == pytest.approx(-1_735_489.59)
     assert r["ending_net_worth"]["p50"] == pytest.approx(2_691_121.17)
     assert r["ending_net_worth"]["p90"] == pytest.approx(13_027_976.22)
+
+
+def test_roth_bucket_is_inert_and_untaxed():
+    """#25: the per-member Roth sub-bucket grows/shrinks with `invested` but
+    never moves money by itself, is excluded from RMDs, and its withdrawals
+    never gross up. So holding the retirement balance as Roth is bit-for-bit
+    identical to holding it as a plain taxable balance with no tax-deferred
+    withdrawal share — the whole point is that Roth carries no tax drag."""
+    roth = base_inputs(tax_deferred0=0, roth0=360_000, retirement_share=0.0,
+                       td_routing=False)
+    taxable = base_inputs(tax_deferred0=0, roth0=0, retirement_share=0.0,
+                          td_routing=False)
+    r = run_simulation(roth, n_paths=1000, seed=1234)
+    t = run_simulation(taxable, n_paths=1000, seed=1234)
+    assert r == t
+
+
+def test_roth_only_member_has_no_rmd_and_beats_tax_deferred():
+    """#25 (the bug being fixed): a member whose retirement money is entirely
+    Roth takes NO RMDs and pays NO phantom withdrawal tax — so their outcome
+    strictly beats the identical household holding the same balance as
+    tax-deferred (which is RMD'd and taxed on withdrawal)."""
+    roth = base_inputs(tax_deferred0=0, roth0=360_000, retirement_share=0.0,
+                       td_routing=False)
+    td = base_inputs(tax_deferred0=360_000, roth0=0, retirement_share=0.6,
+                     td_routing=False)
+    r = run_simulation(roth, n_paths=1000, seed=1234)
+    d = run_simulation(td, n_paths=1000, seed=1234)
+    # Roth-only: no forced distribution milestone.
+    assert not any(m["kind"] == "rmd_start" for m in r["milestones"])
+    # Tax-deferred: RMDs legitimately fire.
+    assert any(m["kind"] == "rmd_start" for m in d["milestones"])
+    # No RMD drag + no withdrawal tax on the retirement share -> strictly ahead.
+    assert (r["deterministic"]["net_worth"][-1]
+            > d["deterministic"]["net_worth"][-1])
+    assert r["success_probability"] >= d["success_probability"]
 
 
 def test_same_seed_identical_output():

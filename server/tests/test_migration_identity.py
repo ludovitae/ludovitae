@@ -23,7 +23,12 @@ from sqlalchemy import select, text
 from gol import config
 from gol.assembly import build_plan_inputs
 from gol.db import get_engine, reset_engine, session_factory
-from gol.models import HouseholdMember, SpendingCategory
+from gol.models import (
+    Account,
+    HouseholdMember,
+    SpendingCategory,
+    default_tax_treatment,
+)
 from gol.sim import run_simulation
 from v1_fixture import N_PATHS, SEED, TODAY, V1_FIXTURE_SQL, apply_v1_fixture_sql
 
@@ -86,6 +91,65 @@ def test_migration_synthesizes_self_member(migrated_db):
         text("SELECT effective_tax_rate_pct FROM profile")
     ).scalar()
     assert rate == 18.0
+
+
+def test_migration_adds_nullable_tax_treatment_resolving_to_todays_behavior(
+    migrated_db,
+):
+    """#25 (0009): every migrated account gets tax_treatment = NULL, which
+    resolves to the type-derived default (retirement -> tax_deferred, hsa ->
+    hsa, else taxable) — exactly the pre-#25 routing. This is the new
+    migration golden that, together with the sim-identity test below, proves
+    migrated data simulates bit-for-bit identically."""
+    cols = {
+        row[1]
+        for row in migrated_db.execute(text("PRAGMA table_info(accounts)")).all()
+    }
+    assert "tax_treatment" in cols
+    accts = migrated_db.execute(select(Account)).scalars().all()
+    assert accts  # the v1 fixture has accounts
+    for acc in accts:
+        assert acc.tax_treatment is None  # nullable override, unset on migration
+        assert acc.resolved_tax_treatment == default_tax_treatment(acc.type)
+
+
+def test_migrated_retirement_account_flagged_roth_takes_no_rmds(v1_data_dir):
+    """#25 (the bug fix): the SAME v1 database as the RMD-fires case, but the
+    retirement account is flagged tax_treatment='roth'. Assembly routes it to
+    the member's Roth bucket — no RMDs, no phantom withdrawal tax
+    (retirement_share drops to 0) — and ending net worth strictly beats the
+    tax-deferred version."""
+    _upgrade("0001")
+    engine = get_engine()
+    with engine.begin() as conn:
+        for stmt in V1_FIXTURE_SQL:
+            conn.execute(text(stmt.replace("'brokerage'", "'retirement'")))
+    _upgrade("head")
+    db = session_factory()()
+    try:
+        # tax-deferred baseline (no override): RMDs fire, share is taxable
+        td_inputs = build_plan_inputs(db, params=None, today=TODAY)
+        assert td_inputs.members[0].tax_deferred0 == 300_000.0
+        assert td_inputs.members[0].roth0 == 0.0
+        assert td_inputs.retirement_share == 1.0
+        td = run_simulation(td_inputs, n_paths=N_PATHS, seed=SEED)
+
+        # flag the retirement account Roth and re-assemble
+        db.execute(text("UPDATE accounts SET tax_treatment = 'roth'"))
+        db.flush()
+        db.expire_all()
+        roth_inputs = build_plan_inputs(db, params=None, today=TODAY)
+        assert roth_inputs.members[0].roth0 == 300_000.0
+        assert roth_inputs.members[0].tax_deferred0 == 0.0
+        assert roth_inputs.retirement_share == 0.0  # Roth is not taxable share
+        roth = run_simulation(roth_inputs, n_paths=N_PATHS, seed=SEED)
+    finally:
+        db.close()
+
+    assert any(m["kind"] == "rmd_start" for m in td["milestones"])
+    assert not any(m["kind"] == "rmd_start" for m in roth["milestones"])
+    assert (roth["deterministic"]["net_worth"][-1]
+            > td["deterministic"]["net_worth"][-1])
 
 
 def test_migration_seeds_zero_amount_starter_category(migrated_db):
